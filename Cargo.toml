@@ -1,0 +1,16 @@
+[package]
+name = "squire"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "squire_vm"
+path = "src/vm/main.rs"
+
+[[bin]]
+name = "squire_asm"
+path = "src/asm/main.rs"
+
+[dependencies]
+colored = "3.0.0"
+crossterm = "0.29.0"
