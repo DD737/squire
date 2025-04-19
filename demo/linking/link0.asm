@@ -34,16 +34,27 @@ _shell_end:
 %ext input_section_cmd
 %ext input_section_arg
 
+%ext name_cmd_help
 %ext name_cmd_exit
 %ext name_cmd_hi
 %ext name_cmd_quote
 
+%ext exec_cmd_help
 %ext exec_cmd_exit
 %ext exec_cmd_hi
 %ext exec_cmd_quote
 %ext exec_cmd_none
 
 shell_decide_cmd:
+
+    movir name_cmd_help, ra
+    movir input_section_cmd, rb
+    cali str_eq
+    cmprr ra, rz
+    jifi _shell_decide_cmd_not_help, E # if strings not equal, dont execute
+        cali exec_cmd_help
+        ret
+_shell_decide_cmd_not_help:
 
     movir name_cmd_exit, ra
     movir input_section_cmd, rb

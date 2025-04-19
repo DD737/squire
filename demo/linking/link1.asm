@@ -3,6 +3,7 @@
 # exports
 %exp putstr
 %exp str_eq
+%exp exec_cmd_help
 %exp exec_cmd_exit
 %exp exec_cmd_hi
 %exp exec_cmd_quote
@@ -26,6 +27,7 @@
 %ext input_section_arg
 %ext input_section_all
 
+%ext msg_cmd_help_0
 %ext msg_cmd_exit_0
 %ext msg_cmd_hi_0
 %ext msg_cmd_none_0
@@ -34,6 +36,10 @@
 # -----SECTION_FUNC-----
 
 
+exec_cmd_help:
+    movir msg_cmd_help_0, ra
+    cali putstr
+    ret
 exec_cmd_exit:
     movir msg_cmd_exit_0, ra
     cali putstr

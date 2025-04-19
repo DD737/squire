@@ -21,12 +21,22 @@ quote: db 34,0
 %exp pre_shell
 pre_shell: db "> ",0
 
+%exp name_cmd_help
 %exp name_cmd_exit
 %exp name_cmd_hi
 %exp name_cmd_quote
+name_cmd_help: db "help",0
 name_cmd_exit: db "exit",0
 name_cmd_hi: db "hi",0
 name_cmd_quote: db "quote",0
+
+%exp msg_cmd_help_0
+msg_cmd_help_0: 
+    db "help      -> prints this help\n"
+    db "exit      -> exits the program\n"
+    db "hi        -> prints a little greeting\n"
+    db "quote str -> prints the given text in quotation marks\n"
+    db 0
 
 %exp msg_cmd_exit_0
 msg_cmd_exit_0: db "Exiting...",0
