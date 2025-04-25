@@ -1,5 +1,10 @@
 # manages sub components
 
+%section code
+
+%header stack size 500
+%header stack loc  500
+
 %public_static_void_main_string_args main
 main:
     cali shell

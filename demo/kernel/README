@@ -1,0 +1,6 @@
+when testing this demo please make sure that your current working directory is in this exact folder.
+otherwise it will not work.
+
+this demo makes heavy use of the file system api which as of writing is not powerful enough to handle many diverse situation like different starting working directories
+
+i recommend building with the make file but no pressure

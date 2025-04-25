@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use helpers::u8_2_u16;
+
 pub const FLAG_E:u8 =  1;
 pub const FLAG_A:u8 =  2;
 pub const FLAG_B:u8 =  4;
@@ -93,6 +95,10 @@ pub struct SourceLocation
     pub column: i32,
     pub file: Arc<str>,
 }
+impl Default for SourceLocation
+{
+    fn default() -> Self { Self::new() }
+}
 impl SourceLocation
 {
     pub fn new() -> Self
@@ -147,19 +153,20 @@ impl TryFrom<u8> for IRRegister
     type Error = Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> 
     {
-        if value <= 15 { unsafe { Ok(std::mem::transmute(value)) } }
+        if value <= 15 { unsafe { Ok(std::mem::transmute::<u8, IRRegister>(value)) } }
         else { Err(error!("Cannot convert {} to Register!", value)) }
     }
 }
+pub type IRImmediate = u16;
 
 #[derive(Debug, Clone)]
 pub enum IRInstructionModifier
 {
     Register(IRRegister),
-    Memory(u16),
+    Memory(IRImmediate),
     RegisterAddress(IRRegister),
-    MemoryAddress(u16),
-    Immediate(u16),
+    MemoryAddress(IRImmediate),
+    Immediate(IRImmediate),
 }
 
 pub type IRInstructionModifier2 = (IRInstructionModifier, IRInstructionModifier);
@@ -174,7 +181,6 @@ pub enum IRInstructionWidth
     B16 = 16,
 }
 
-pub type IRRayInstruction = u8;
 pub type IRJIFFlags = u8;
 
 #[derive(Debug, Clone)]
@@ -220,9 +226,12 @@ pub enum IRInstruction
     NOP, // no op
     HLT, // halt
     CLF, // cleaf flags
-    RAY(IRRayInstruction), // raylib [?]
     SER_OUT(IRRegister),
     SER_IN (IRRegister),
+    SER_IO(IRImmediate),
+    PSHFLG,
+    POPFLG,
+    INT(IRImmediate),
     DBG, // debug instruction
 
     // every mov instruction
@@ -238,35 +247,188 @@ pub enum IRInstruction
     CAL(IRInstructionModifier), // call
     RET,
 
+    INC(IRRegister),
+    DEC(IRRegister),
     // alu instructions
     ALU(IRALUInstruction),
 
 }
 
-#[derive(Debug)]
-pub struct _IRBinaryHeader_V_0000
+pub trait __IRBinaryHeader
 {
-    entry_point: u16,
-    stack_adr: u16,
-    stack_size: u16,
-    flags: u8,
+    fn serialize(&self) -> [u8; 32];
+    fn deserialize(bytes: [u8; 32]) -> Self;
+}
+
+#[allow(non_snake_case)]
+pub mod _IRBinaryHeader
+{
+    use helpers::{u16_2_u8, u8_2_u16};
+
+    use super::*;
+
+    struct Serializer
+    {
+        pub bytes: [u8; 32],
+        pub pos: usize,
+    }
+    impl Serializer
+    {
+        pub fn new() -> Self
+        {
+            Self
+            {
+                bytes: [0; 32],
+                pos: 0,
+            }
+        }
+        pub fn put8(&mut self, b: u8) -> &mut Self
+        {
+            self.bytes[self.pos] = b;
+            self.pos += 1;
+            self
+        }
+        pub fn put16(&mut self, w: u16) -> &mut Self
+        {
+            let b = u16_2_u8(w);
+            self.put8(b.0).put8(b.1)
+        }
+        pub fn finish(&mut self) -> [u8; 32]
+        {
+            for i in self.pos..32
+            {
+                self.bytes[i] = 0;
+            }
+            self.bytes
+        }
+    }
+
+    struct Deserializer
+    {
+        pub bytes: [u8; 32],
+        pub pos: usize,
+    }
+    impl Deserializer
+    {
+        pub fn new(bytes: [u8; 32]) -> Self
+        {
+            Self
+            {
+                bytes,
+                pos: 0,
+            }
+        }
+        pub fn skip(&mut self, n: usize) -> &mut Self
+        {
+            self.pos += n;
+            self
+        }
+        pub fn get8(&mut self, b: &mut u8) -> &mut Self
+        {
+            *b = self.bytes[self.pos];
+            self.pos += 1;
+            self
+        }
+        pub fn get16(&mut self, w: &mut u16) -> &mut Self
+        {
+            let mut b0 = 0;
+            let mut b1 = 0;
+            self.get8(&mut b0).get8(&mut b1);
+            *w = u8_2_u16((b0, b1));
+            self
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct _V_0000
+    {
+        pub entry_point: u16,
+        pub stack_adr: u16,
+        pub stack_size: u16,
+        pub flags: u8,
+    }
+    impl __IRBinaryHeader for _V_0000
+    {
+        fn serialize(&self) -> [u8; 32] 
+        {
+            Serializer::new()
+                .put16(0x0000)
+                .put16(self.entry_point)
+                .put16(self.stack_adr)
+                .put16(self.stack_size)
+                .put8(self.flags)
+            .finish()
+        }
+        fn deserialize(bytes: [u8; 32]) -> Self
+        {
+            
+            let mut entry_point: u16 = 0;
+            let mut stack_adr: u16 = 0;
+            let mut stack_size: u16 = 0;
+            let mut flags: u8 = 0;
+
+            Deserializer::new(bytes)
+                .skip(2)
+                .get16(&mut entry_point)
+                .get16(&mut stack_adr)
+                .get16(&mut stack_size)
+                .get8(&mut flags);
+
+            Self
+            {
+                entry_point,
+                stack_adr,
+                stack_size,                
+                flags,
+            }
+
+        }
+    }
+
 }
 
 #[derive(Debug)]
 pub enum IRBinaryHeader
 {
-    V_0000(_IRBinaryHeader_V_0000)
+    V_0000(_IRBinaryHeader::_V_0000),
+}
+impl IRBinaryHeader
+{
+    pub fn version(ver: u16, bytes: [u8; 32]) -> Self
+    {
+        match ver
+        {
+            0x0000 => IRBinaryHeader::V_0000(_IRBinaryHeader::_V_0000::deserialize(bytes)),
+            _ => panic!("FATAL INVALID BINARY HEADER VERSION {:#x}", ver),
+        }
+    }
+}
+impl __IRBinaryHeader for IRBinaryHeader
+{
+    fn serialize(&self) -> [u8; 32] 
+    {
+        match self
+        {
+            IRBinaryHeader::V_0000(v0000) => v0000.serialize(),
+        }
+    }
+    fn deserialize(bytes: [u8; 32]) -> Self
+    {
+        let version = u8_2_u16(( bytes[0], bytes[1] ));
+        IRBinaryHeader::version(version, bytes)
+    }
 }
 
 pub mod helpers
 {
 
-    use super::{SourceLocation, Error};
+    use super::{SourceLocation, Error, IRBinaryHeader, _IRBinaryHeader};
+    use crate::executable::__internal::Label;
 
     pub fn u16_2_u8(i:u16) -> (u8,u8)
     {
         let l = ((i & 0xFF00) >> 8) as u8;
-        let r = ((i & 0x00FF)     ) as u8;
+        let r = ( i & 0x00FF      ) as u8;
         (l, r)
     }
     pub fn u8_2_u16(b:(u8,u8)) -> u16
@@ -276,7 +438,7 @@ pub mod helpers
         
         let mut out = String::new();
 
-        let mut str = str.chars().into_iter();
+        let mut str = str.chars();
 
         while let Some(c) = str.next()
         {
@@ -307,6 +469,143 @@ pub mod helpers
         Ok(out)
 
     }
+
+    #[derive(Debug, Clone)]
+    pub struct HeaderConstructor
+    {
+        pub version: u16,
+        pub constructing: bool,
+
+        pub stack_pos: u16,
+        pub stack_size: u16,
+        pub flags: u8,
+        pub entry: Option<Label>,
+        pub _entry: u16,
+
+        pub file_loc: String,
+    }
+    impl Default for HeaderConstructor
+    {
+        fn default() -> Self { Self::new() }
+    }
+    impl HeaderConstructor
+    {
+
+        pub fn new() -> Self
+        {
+            Self
+            {
+                version: 0x0000,
+                constructing: false,
+
+                stack_pos: 0,
+                stack_size: 0,
+                flags: 0,
+                entry: None,
+                _entry: 0,
+
+                file_loc: String::new(),
+            }
+        }
+
+        pub fn set_stack_pos(&mut self, pos: u16, loc: SourceLocation) -> Result<(), Error>
+        {
+            self.constructing = true;
+            match self.version
+            {
+                0x0000 | 0x0001
+                    => self.stack_pos = pos,
+                _ =>  return Err(error_in!(loc, "Cannot set stack location in header version {:#x}!", self.version)),
+            };
+            Ok(())
+        }
+        pub fn set_stack_size(&mut self, size: u16, loc: SourceLocation) -> Result<(), Error>
+        {
+            self.constructing = true;
+            match self.version
+            {
+                0x0000 | 0x0001
+                    => self.stack_size = size,
+                _ =>  return Err(error_in!(loc, "Cannot set stack size in header version {:#x}!", self.version)),
+            };
+            Ok(())
+        }
+        pub fn set_flags(&mut self, flags: u8, loc: SourceLocation) -> Result<(), Error>
+        {
+            self.constructing = true;
+            match self.version
+            {
+                0x0000 | 0x0001
+                    => self.flags = flags,
+                _ =>  return Err(error_in!(loc, "Cannot set flags in header version {:#x}!", self.version)),
+            };
+            Ok(())
+        }
+        pub fn set_straight_entry(&mut self, entry: u16, loc: SourceLocation) -> Result<(), Error>
+        {
+            self.constructing = true;
+            match self.version
+            {
+                0x0000 | 0x0001
+                    => self._entry = entry,
+                _ =>  return Err(error_in!(loc, "Cannot set entry point in header version {:#x}!", self.version)),
+            };
+            Ok(())
+        }
+        pub fn set_entry(&mut self, entry: Label, loc: SourceLocation) -> Result<(), Error>
+        {
+            self.constructing = true;
+            match self.version
+            {
+                0x0000 | 0x0001
+                    => self.entry = Some(entry),
+                _ =>  return Err(error_in!(loc, "Cannot set entry point in header version {:#x}!", self.version)),
+            };
+            Ok(())
+        }
+
+        pub fn set_file_loc(&mut self, loc_str: String, loc: SourceLocation) -> Result<(), Error>
+        {
+            self.constructing = true;
+            match self.version
+            {
+                0x0001 => self.file_loc = loc_str,
+                _ =>  return Err(error_in!(loc, "Cannot set entry point in header version {:#x}!", self.version)),
+            };
+            Ok(())
+        }
+
+        pub fn finalize(&mut self) -> Result<IRBinaryHeader, Error>
+        {
+
+            if(self.stack_size < 1024)
+            {
+                self.stack_size = 1024;
+            }
+
+            if(self.stack_pos < 0x1000)
+            {
+                self.stack_pos = 0x1000;
+            }
+
+            Ok(match self.version
+            {
+                0x0000 => 
+                {
+                    IRBinaryHeader::V_0000(_IRBinaryHeader::_V_0000{
+                        entry_point: self._entry,
+                        flags: self.flags,
+                        stack_adr: self.stack_pos,
+                        stack_size: self.stack_size,
+                    })
+                },
+                _ => return Err(error!("Invalid binary header version: {:#x}", self.version)),
+            })
+
+        }
+
+    }
+
 }
 
 pub mod _instruction_conversion
@@ -338,7 +637,7 @@ pub mod _instruction_conversion
                 {
                     IRInstructionModifier::Register(r) =>
                     {
-                        push(main + 0)?;
+                        push(main)?;
                         push(combine_regs(reg, reg_to_byte(r)))?;
                     },
                     IRInstructionModifier::Memory(m) =>
@@ -557,11 +856,16 @@ pub mod _instruction_conversion
             IRInstruction::HLT => push(0x01)?,
             IRInstruction::CLF => push(0x02)?,
             IRInstruction::DBG => push(0x0F)?,
-            IRInstruction::RAY(ins) => { push(0x03)?; push(ins)?; },
 
             IRInstruction::SER_OUT(r) => { push(0x04)?; push(reg_to_byte(r))?; },
             IRInstruction::SER_IN (r) => { push(0x05)?; push(reg_to_byte(r))?; },
+            IRInstruction::SER_IO (i) => { push(0x06)?; push( i as u8      )?; },
+
+            IRInstruction::PSHFLG => { push(0x07)?; },
+            IRInstruction::POPFLG => { push(0x08)?; },
         
+            IRInstruction::INT(imm) => { push(0x0E)?; push(imm as u8)?; }
+
             IRInstruction::MOV(w, (l,r)) =>
             {
 
@@ -913,7 +1217,10 @@ pub mod _instruction_conversion
 
             },
             IRInstruction::RET => push(0x4F)?,
-        
+       
+            IRInstruction::INC(r) => { push(0x6E)?; push(reg_to_byte(r))?; },
+            IRInstruction::DEC(r) => { push(0x6F)?; push(reg_to_byte(r))?; },
+
             IRInstruction::ALU(alu_ins) => return alu_ins_to_bytes(alu_ins, push),
 
         };
@@ -954,7 +1261,10 @@ pub mod _instruction_conversion
                 0x00 => return Ok(IRInstruction::NOP),
                 0x01 => return Ok(IRInstruction::HLT),
                 0x02 => return Ok(IRInstruction::CLF),
-                0x03 => return Ok(IRInstruction::RAY(fetch()?)),
+                0x06 => return Ok(IRInstruction::SER_IO(fetch()? as u16)),
+                0x07 => return Ok(IRInstruction::PSHFLG),
+                0x08 => return Ok(IRInstruction::POPFLG),
+                0x0E => return Ok(IRInstruction::INT(fetch()? as u16)),
                 0x0F => return Ok(IRInstruction::DBG),
 
                 0x4F => return Ok(IRInstruction::RET),
@@ -1082,6 +1392,21 @@ pub mod _instruction_conversion
             }
             else if(ins >= 0x60) // simple alu
             {
+
+                match ins
+                {
+                    0x6E =>
+                    {
+                        let reg = get_reg(&mut fetch)?;
+                        return Ok(IRInstruction::INC(reg));
+                    },
+                    0x6F =>
+                    {
+                        let reg = get_reg(&mut fetch)?;
+                        return Ok(IRInstruction::DEC(reg));
+                    },
+                    _ => {},
+                }
                 
                 let mut not_ins = true;
 
@@ -1450,25 +1775,23 @@ pub mod _instruction_conversion
                 IRInstruction::MOV(width, modifiers)
 
             }
-            else 
+            else if(ins == 0x04 || ins == 0x05) // in/out ins
             {
-                if(ins == 0x04 || ins == 0x05) // io ins
+                let reg = get_reg(&mut fetch)?;
+                if(ins == 0x04)
                 {
-                    let reg = get_reg(&mut fetch)?;
-                    if(ins == 0x04)
-                    {
-                        IRInstruction::SER_OUT(reg)
-                    }
-                    else
-                    {
-                        IRInstruction::SER_IN(reg)
-                    }
+                    IRInstruction::SER_OUT(reg)
                 }
                 else
                 {
-                    todo!("error")
+                    IRInstruction::SER_IN(reg)
                 }
-            })
+            }
+            else
+            {
+                return Err(error!("Error no instruction {:#04x}!", ins));
+            }
+            )
 
         }
 

@@ -1,5 +1,7 @@
 # all the little functions
 
+%section code
+
 # exports
 %exp putstr
 %exp str_eq

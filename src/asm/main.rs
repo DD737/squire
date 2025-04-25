@@ -1,9 +1,12 @@
+#![allow(unused_assignments)]
 #![allow(unused_parens)]
 use std::{fmt::Display, fs::write, path::Path};
 use std::sync::Arc;
-use asm::{AsmTokenizer, __asm::ASM, __dir::AsmDirector, __linc::Linker};
+use asm::{AsmTokenizer, __asm::ASM, __dir::AsmDirector};
 use squire::instructions::Error;
 use colored::*;
+use squire::link::Linker;
+use squire::executable::__internal::Format;
 
 pub mod asm;
 
@@ -40,7 +43,7 @@ fn print_tokens(file: Arc<str>) -> Result<(), Error>
         }
     }
 
-    println!("");
+    println!();
 
     Ok(())
 
@@ -60,7 +63,7 @@ fn print_direct(file: Arc<str>) -> Result<(), Error>
         }
     }
 
-    println!("");
+    println!();
 
     Ok(())
 
@@ -80,7 +83,7 @@ fn print_parser(file: Arc<str>) -> Result<(), Error>
         }
     }
 
-    println!("");
+    println!();
 
     Ok(())
 
@@ -93,6 +96,7 @@ fn main()
     let mut _debug_print_direct = false;
     let mut _debug_print_parser = false;
 
+#[allow(unused_variables)]
     let mut outfile = String::from("out.bin");
     let mut infiles: Vec<Arc<str>> = Vec::new();
 
@@ -140,7 +144,7 @@ fn main()
 
     let _print_any = _debug_print_tokens | _debug_print_direct | _debug_print_parser;
 
-    println!("{}", "-------------------------".red());
+    println!("{}", "-------------------------".magenta());
 
     if(_print_any)
     {
@@ -177,21 +181,30 @@ fn main()
         }
     }
 
-    let mut link = match handle_err(Linker::file(infiles))
+    let assemblers = match handle_err(infiles.into_iter().map(ASM::file).collect::<Result<Vec<ASM>, Error>>())
     {
-        Some(l) => l,
+        Some(a) => a,
+        None => return,
+    };
+    let formats = match handle_err(assemblers.into_iter().map(|mut a|a.parse()).collect::<Result<Vec<Format>, Error>>())
+    {
+        Some(f) => f,
+        None => return,
+    };
+    
+    let mut ln = Linker::formats(formats);
+
+    let exe = match handle_err(ln.link())
+    {
+        Some(e) => e,
         None => return,
     };
 
-    let bytes = match handle_err(link.link())
-    {
-        Some(l) => l,
-        None => return,
-    };
-
+    let bytes = Linker::executable_to_bytes(exe, true);
+    
     let _ = write(outfile, bytes);
 
-    println!("{}", "-------------------------".red());
+    println!("{}", "-------------------------".magenta());
 
 }
 

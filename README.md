@@ -43,3 +43,21 @@ Good question, go do something productive.
         - command line file specifications
         - command line args `-t`, `-d` and `-s` for debugging different assembler stages [printed for each file]
         - missing command line arg for debugging linking
+- ## Version 0.9
+    - finally added code sections (after many errors)
+    - added binary header version 0x0000
+        - `%header stack size` to set stack size, assembler enforces minimum of 1024, vm enforces 512
+        - `%header stack loc` to set the stacks position in ram, assembler only allows minimum of 0x1000, vm allows minimum of 0x100
+        - `%flags` to set flags (currently does nothing)
+        - `%entry` and label or imm as entry point of the program, directly sets the instruction pointer of the vm [ `%entry` also has the alias `%public_static_void_main_string_args` if youre into that ]
+    - missing: support of sectioned data in vm
+    - missing: standalone linker, although it has been abstracted into external library
+- ## Version 0.9.1
+    - [almost] standalone linker
+    - IO for files, interrupts and memory mapping
+    - kernel, subkernel and user modes
+    - [kernel-demo!](demo/kernel/) [run the make file and use `exec test.bin` to test running a program on the kernel!]
+    - more demo programs that have also been used for debugging
+    - expanded instruction set
+    - removed ray instruction (will be moved to io device)
+    - added [bad] little disassembler for debugging (please dont try to actually use it its not great)

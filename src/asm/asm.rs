@@ -18,7 +18,6 @@ pub enum Token
 }
 impl PartialEq for Token
 {
-    fn ne(&self, other: &Self) -> bool { !(self == other) }
     fn eq(&self, other: &Self) -> bool 
     {
         match self
@@ -116,7 +115,7 @@ impl AsmTokenizer
         if(self._peek()? == &'\r')
         {
             self.next();
-            return self.peek();
+            self.peek()
         }
         else
         {
@@ -160,9 +159,10 @@ impl AsmTokenizer
 
         if(c.0 == '#')
         {
-            while let Some(c) = self.next()
+            while let Some(c) = self.peek()
             {
-                if(c.0 == '\n') { break; }
+                if(*c.0 == '\n') { break; }
+                else { self.next()?; }
             }
             return self.get_token();
         }
@@ -224,15 +224,50 @@ impl AsmTokenizer
                 else if(c.0.is_numeric())
                 {
 
+                    let mut base = 10;
+
                     let mut str = String::new();
+                    
+                    if(c.0 == '0')
+                    {
+                        self.next()?;
+                        let n = self.peek()?;
+                        match n.0.to_ascii_lowercase()
+                        {
+                            'x' => { base = 16; self.next()?; },
+                            'd' => { base = 10; self.next()?; },
+                            'o' => { base =  8; self.next()?; },
+                            'b' => { base =  2; self.next()?; },
+                            _ =>
+                            {
+                                str.push(c.0);
+                                // if(!n.0.is_numeric())
+                                // {
+                                //     return Some(Err(error_in!((n.1), "Invalid token '{}' in number!", n.0)));
+                                // }
+                            }
+                        }
+                    }
+
 
                     while let Some(c) = self.peek()
                     {
-                        if(!c.0.is_numeric()) { break; }
-                        else { str.push(self.next()?.0); }
+                        if(!c.0.is_numeric())
+                        {
+                            if(base != 16)
+                            {
+                                break;
+                            }
+                            match c.0.to_ascii_lowercase()
+                            {
+                                'a'|'b'|'c'|'d'|'e'|'f' => {},
+                                _ => break,
+                            }
+                        }
+                        str.push(self.next()?.0);
                     }
 
-                    let num = match str.parse::<i32>()
+                    let num = match i32::from_str_radix(&str, base)
                     {
                         Ok(n) => n,
                         Err(_) => return Some(Err(error!("{}: Could not parse number! [if this was not supposed to be a number, prefix it with a non-numeric character]", loc))),
@@ -268,7 +303,8 @@ pub mod __dir
 {
     
     use super::*;
-    use __asm::Label;
+    use squire::executable::__internal::{Label, Section};
+    use squire::instructions::helpers::HeaderConstructor;
 
     #[derive(Debug)]
     pub struct DirDefinition
@@ -278,16 +314,23 @@ pub mod __dir
         pub value: Option<Token>,
     }
 
-    #[derive(Debug)]
     pub struct AsmDirector
     {
+
         pub tokenizer: AsmTokenizer,
+
         token: Option<Token>,
         definitions: Vec<DirDefinition>,
         allow_block_close: u8,
-        pub exposed_labels: Vec<Label>,
+        
+        pub exported_labels: Vec<Label>,
         pub external_labels: Vec<Label>,
-        pub entry_point: Option<Label>,
+
+        pub section: Section,
+        pub switched_section: bool,
+
+        pub constructor: HeaderConstructor,
+
     }
     impl AsmDirector
     {
@@ -296,26 +339,42 @@ pub mod __dir
         {
             Self
             {
+
                 tokenizer: AsmTokenizer::code(src),
+
                 token: None,
                 definitions: Vec::new(),
                 allow_block_close: 0,
-                exposed_labels: Vec::new(),
+
+                exported_labels: Vec::new(),
                 external_labels: Vec::new(),
-                entry_point: None,
+
+                section: Section::None,
+                switched_section: false,
+
+                constructor: HeaderConstructor::new(),
+
             }
         }
         pub fn file(file: Arc<str>) -> Result<Self, Error>
         {
             Ok(Self
             {
+
                 tokenizer: AsmTokenizer::file(file)?,
+
                 token: None,
                 definitions: Vec::new(),
                 allow_block_close: 0,
-                exposed_labels: Vec::new(),
+
+                exported_labels: Vec::new(),
                 external_labels: Vec::new(),
-                entry_point: None,
+
+                section: Section::None,
+                switched_section: false,
+
+                constructor: HeaderConstructor::new(),
+
             })
         }
 
@@ -360,6 +419,171 @@ pub mod __dir
 
         }
 
+        fn get_identifier(&mut self) -> Result<(String, SourceLocation), Error>
+        {
+            Ok(match match self.expect(Token::Identifier(String::new(), SourceLocation::new()))
+            {
+                Ok(t) => t,
+                Err(e) => return Err(e),
+            }.unwrap()
+            {
+                Token::Identifier(n, l) => (n, l),
+                _ => unreachable!(),
+            })
+        }
+        fn get_string(&mut self) -> Result<(String, SourceLocation), Error>
+        {
+            Ok(match match self.expect(Token::String(String::new(), SourceLocation::new()))
+            {
+                Ok(t) => t,
+                Err(e) => return Err(e),
+            }.unwrap()
+            {
+                Token::String(n, l) => (n, l),
+                _ => unreachable!(),
+            })
+        }
+        fn get_number(&mut self) -> Result<(i32, SourceLocation), Error>
+        {
+            Ok(match match self.expect(Token::Number(0, SourceLocation::new()))
+            {
+                Ok(t) => t,
+                Err(e) => return Err(e),
+            }.unwrap()
+            {
+                Token::Number(n, l) => (n, l),
+                _ => unreachable!(),
+            })
+        }
+
+
+        fn header_parse(&mut self, name: &str, l: SourceLocation) -> Option<Result<(), Error>>
+        {
+            
+            match name
+            {
+
+                "header" =>
+                {
+
+                    let (name,l) = match self.get_identifier() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                    match name.as_str()
+                    {
+                        "stack" =>
+                        {
+                            
+                            let (name,l) = match self.get_identifier() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                            match name.as_str()
+                            {
+                                "loc" =>
+                                {
+
+                                    let (num,l) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                                    match self.constructor.set_stack_pos(num as u16, l) { Err(e) => return Some(Err(e)), _ => {} };
+        
+                                },
+                                "size" =>
+                                {
+
+                                    let (num,l) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                                    match self.constructor.set_stack_size(num as u16, l) { Err(e) => return Some(Err(e)), _ => {} };
+        
+                                },
+                                _ => return Some(Err(error_in!(l, "Expected valid option after %header stack! ('{}' given)", name)))
+                            }
+
+                        },
+                        "flags" =>
+                        {
+
+                            let (num,l) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                            match self.constructor.set_flags(num as u8, l) { Err(e) => return Some(Err(e)), _ => {} };
+
+                        },
+                        "files" =>
+                        {
+
+                            let (path,l) = match self.get_string() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                            match self.constructor.set_file_loc(path, l) { Err(e) => return Some(Err(e)), _ => {} };
+
+                        },
+                        "version" =>
+                        {
+                            
+                            if(self.constructor.constructing)
+                            {
+                                return Some(Err(error_in!(l, "Cannot change version after partially constructing the header!")))
+                            }
+
+                            let (num,_) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                            self.constructor.version = num as u16;
+
+                        },
+                        _ => return Some(Err(error_in!(l, "Expected valid option after %header! ('{}' given)", name)))
+                    }
+
+                },
+
+                "entry" | "public_static_void_main_string_args" =>
+                {
+
+                    if let Some(entry) = &self.constructor.entry
+                    {
+                        return Some(Err(error_in!(l, "Cannot re-define entry point! (Already defined here: {})", entry.fileloc)));
+                    }
+
+                    let token = match match self.next()
+                    {
+                        Ok(t) => t,
+                        Err(e) => return Some(Err(e)),
+                    }
+                    {
+                        Some(t) => t,
+                        None => return Some(Err(error_in!(l, "Expected specifier for entry point!"))),
+                    };
+
+                    match token
+                    {
+                        Token::Identifier(name, l) =>
+                        {
+                            match self.constructor.set_entry(Label {
+                                name,
+                                fileloc: l.clone(),
+                                pos: 0,
+                            }, l)
+                            {
+                                Ok(_) => {},
+                                Err(e) => return Some(Err(e)),
+                            };
+                        },
+                        Token::Number(num, l) =>
+                        {
+                            match self.constructor.set_straight_entry(num as u16, l)
+                            {
+                                Ok(_) => {},
+                                Err(e) => return Some(Err(e)),
+                            };
+                        },
+                        _ => return Some(Err(error_in!(l, "Expected specifier for entry point!"))),
+                    }
+
+                },
+
+                _ => return None,
+
+            }
+
+            Some(Ok(()))
+
+        }
+
         fn parse_directive(&mut self) -> Option<Result<Token, Error>>
         {
             
@@ -375,30 +599,39 @@ pub mod __dir
                 {
                     match n.as_str()
                     {
+                        "section" =>
+                        {
+                            
+                            let (name,_) = match self.get_identifier() { Ok(s) => s, Err(e) => return Some(Err(e)) };
+
+                            let prev_section = self.section;
+
+                            match name.to_ascii_lowercase().as_str()
+                            {
+                                "code" => self.section = Section::Code,
+                                "data" => self.section = Section::Data,
+                                _ => return Some(Err(error_in!(l, "Unrecognised section name '{}'!", name))),
+                            };
+                            self.switched_section = self.section != prev_section;
+
+                            self.get_token()
+
+                        },
                         "exp" | "ext" =>
                         {
                             
-                            let name = match match self.expect(Token::Identifier(String::new(), SourceLocation::new()))
-                            {
-                                Ok(t) => t,
-                                Err(e) => return Some(Err(e)),
-                            }.unwrap()
-                            {
-                                Token::Identifier(n, _) => n,
-                                _ => unreachable!(),
-                            };
+                            let (name,_) = match self.get_identifier() { Ok(s) => s, Err(e) => return Some(Err(e)) };
 
                             let label = Label 
                             {
                                 name,
                                 fileloc: l,
                                 pos: 0,
-                                imported: (n == "ext"),
                             };
 
                             if(n == "exp")
                             {
-                                self.exposed_labels.push(label);
+                                self.exported_labels.push(label);
                             }
                             else
                             {
@@ -408,46 +641,10 @@ pub mod __dir
                             self.get_token()
 
                         },
-                        "entry" | "public_static_void_main_string_args" =>
-                        {
-
-                            if let Some(entry) = &self.entry_point
-                            {
-                                return Some(Err(error_in!(l, "Cannot re-define entry point! (Already defined here: {})", entry.fileloc)));
-                            }
-
-                            let name = match match self.expect(Token::Identifier(String::new(), SourceLocation::new()))
-                            {
-                                Ok(t) => t,
-                                Err(e) => return Some(Err(e)),
-                            }.unwrap()
-                            {
-                                Token::Identifier(n, _) => n,
-                                _ => unreachable!(),
-                            };
-
-                            self.entry_point = Some(Label {
-                                name,
-                                fileloc: l.clone(),
-                                pos: 0,
-                                imported: false,
-                            });
-
-                            self.get_token()
-
-                        },
                         "def" => 
                         {
                             
-                            let name = match match self.expect(Token::Identifier(String::new(), SourceLocation::new()))
-                            {
-                                Ok(t) => t,
-                                Err(e) => return Some(Err(e)),
-                            }.unwrap()
-                            {
-                                Token::Identifier(n, _) => n,
-                                _ => unreachable!(),
-                            };
+                            let (name,_) = match self.get_identifier() { Ok(s) => s, Err(e) => return Some(Err(e)) };
 
                             let value = match self.get_token().transpose()
                             {
@@ -468,15 +665,7 @@ pub mod __dir
                         "ifdef" | "ifndef" =>
                         {
                             
-                            let name = match match self.expect(Token::Identifier(String::new(), SourceLocation::new()))
-                            {
-                                Ok(t) => t,
-                                Err(e) => return Some(Err(e)),
-                            }.unwrap()
-                            {
-                                Token::Identifier(n, _) => n,
-                                _ => unreachable!(),
-                            };
+                            let (name,_) = match self.get_identifier() { Ok(s) => s, Err(e) => return Some(Err(e)) };
                             
                             let mut def: bool = false;
 
@@ -523,27 +712,45 @@ pub mod __dir
                         _ => 
                         {
 
-                            let mut def: Option<&DirDefinition> = None;
-
-                            for d in &self.definitions
+                            match self.header_parse(n.as_str(), l.clone())
                             {
-                                if(d.name == n)
+                                Some(s) => 
+                                { 
+                                    match s
+                                    {
+                                        Ok(_) => {},
+                                        Err(e) => return Some(Err(e)),
+                                    };
+                                    self.get_token() 
+                                },
+                                None =>
                                 {
-                                    def = Some(d);
-                                    break;
-                                }
-                            }
-                            
-                            let def = match def
-                            {
-                                Some(d) => d,
-                                None => return Some(Err(error_in!(l, "There is no directive or definition name '%{}'!", n))),
-                            };
 
-                            match &def.value
-                            {
-                                Some(v) => Some(Ok(v.clone())),
-                                None => return Some(Err(error_in!(l, "The definition '{}' doesnt hold a value that could be put here!", n))),
+                                    let mut def: Option<&DirDefinition> = None;
+
+                                    for d in &self.definitions
+                                    {
+                                        if(d.name == n)
+                                        {
+                                            def = Some(d);
+                                            break;
+                                        }
+                                    }
+                                    
+                                    let def = match def
+                                    {
+                                        Some(d) => d,
+                                        None => return Some(Err(error_in!(l, "There is no directive or definition name '%{}'!", n))),
+                                    };
+
+                                    match &def.value
+                                    {
+                                        Some(v) => Some(Ok(v.clone())),
+                                        None => return Some(Err(error_in!(l, "The definition '{}' doesnt hold a value that could be put here!", n))),
+                                    }
+
+                                }
+
                             }
 
                         }
@@ -653,22 +860,9 @@ pub mod __asm
 
     use __dir::AsmDirector;
     use _instruction_conversion::ins_to_bytes;
-    use helpers::u16_2_u8;
+    use squire::executable::__internal::{Section, SectionData, SectionFormat, Format, Label, LabelRequest};
 
     use super::*;
-
-    #[derive(Debug, Clone)]
-    pub struct Label
-    {
-        pub name: String,
-        pub fileloc: SourceLocation,
-        pub pos: usize,
-        pub imported: bool,
-    }
-    impl PartialEq for Label
-    {
-        fn eq(&self, other: &Self) -> bool { self.name == other.name }
-    }
 
     #[derive(Debug)]
     pub enum Literal
@@ -686,14 +880,6 @@ pub mod __asm
     }
 
     #[derive(Debug)]
-    struct LabelRequest
-    {
-        name: String,
-        loc: SourceLocation,
-        pos: usize,
-    }
-
-    #[derive(Debug)]
     pub enum Statement
     {
         Label(Label),
@@ -701,20 +887,13 @@ pub mod __asm
         //Literal(Literal),
     }
 
-    pub struct ParseResult
-    {
-        pub bytes: Vec<u8>,
-        pub exposed_labels: Vec<Label>,
-        pub entry_point: Option<Label>,
-    }
-
-    #[derive(Debug)]
     pub struct ASM
     {
+
         director: AsmDirector,
         token: Option<Token>,
-        label_requests: Vec<LabelRequest>,
-        labels: Vec<Label>,
+        requested_labels: Vec<LabelRequest>,
+
     }
     impl ASM
     {
@@ -726,20 +905,22 @@ pub mod __asm
         {
             Self
             {
+
                 director: AsmDirector::code(src),
                 token: None,
-                label_requests: Vec::new(),
-                labels: Vec::new(),
+                requested_labels: Vec::new(),
+
             }
         }
         pub fn file(file: Arc<str>) -> Result<Self, Error>
         {
             Ok(Self
             {
+
                 director: AsmDirector::file(file)?,
                 token: None,
-                label_requests: Vec::new(),
-                labels: Vec::new(),
+                requested_labels: Vec::new(),
+
             })
         }
 
@@ -817,7 +998,7 @@ pub mod __asm
                     Token::Colon(_) => 
                     { 
                         self.next()?; 
-                        return Ok(Some(Statement::Label(Label { name: name.0, fileloc: name.1, pos: 0, imported: false })));
+                        return Ok(Some(Statement::Label(Label { name: name.0, fileloc: name.1, pos: 0 })));
                     },
                     _ => {},
                 }
@@ -861,9 +1042,9 @@ pub mod __asm
 
         }
 
-        fn register_label_request(&mut self, name: String, loc: SourceLocation, pos: usize)
+        fn register_label_request(&mut self, name: String, loc: SourceLocation, pos: u16)
         {
-            self.label_requests.push(LabelRequest {
+            self.requested_labels.push(LabelRequest {
                 name, loc, pos
             });
         }
@@ -915,7 +1096,7 @@ pub mod __asm
                 match &exp.args[index] 
                 { 
                     Literal::Number(n, _) => Ok(*n as u16), 
-                    Literal::Identifier(s, l) => { self.register_label_request(s.clone(), l.clone(), curr_byte_off + off + 1); Ok(0) },
+                    Literal::Identifier(s, l) => { self.register_label_request(s.clone(), l.clone(), (curr_byte_off + off + 1) as u16); Ok(0) },
                     Literal::String(s, l) => 
                     {
                         if(s.len() == 1)
@@ -937,9 +1118,29 @@ pub mod __asm
                 "nop" => return Ok(IRInstruction::NOP),
                 "hlt" => return Ok(IRInstruction::HLT),
                 "clf" => return Ok(IRInstruction::CLF),
-                // RAY
+                "pshflg" => return Ok(IRInstruction::PSHFLG),
+                "popflg" => return Ok(IRInstruction::POPFLG),
                 "dbg" => return Ok(IRInstruction::DBG),
                 "ret" => return Ok(IRInstruction::RET),
+
+                "inc" =>
+                {
+                    if(exp.args.len() < 1)
+                    {
+                        return Err(err_expect_args("inc", 1));
+                    }
+                    let reg = get_reg(0, "inc")?;
+                    return Ok(IRInstruction::INC(reg));
+                },
+                "dec" =>
+                {
+                    if(exp.args.len() < 1)
+                    {
+                        return Err(err_expect_args("dec", 1));
+                    }
+                    let reg = get_reg(0, "dec")?;
+                    return Ok(IRInstruction::DEC(reg));
+                },
 
                 "__out" =>
                 {
@@ -949,7 +1150,7 @@ pub mod __asm
                     }
                     let reg = get_reg(0, "__out")?;
                     return Ok(IRInstruction::SER_OUT(reg));
-                }
+                },
                 "__in" =>
                 {
                     if(exp.args.len() < 1)
@@ -958,7 +1159,26 @@ pub mod __asm
                     }
                     let reg = get_reg(0, "__in")?;
                     return Ok(IRInstruction::SER_IN(reg));
-                }
+                },
+                "__io" =>
+                {
+                    if(exp.args.len() < 1)
+                    {
+                        return Err(err_expect_args("__io", 1));
+                    }
+                    let imm = get_imm(0, 0, "__io")?;
+                    return Ok(IRInstruction::SER_IO(imm));
+                },
+                "int" =>
+                {
+                    if(exp.args.len() < 1)
+                    {
+                        return Err(err_expect_args("int", 1));
+                    }
+                    let imm = get_imm(0, 0, "int")?;
+                    return Ok(IRInstruction::INT(imm));
+                },
+
 
                 _ => {}
             }
@@ -993,7 +1213,7 @@ pub mod __asm
                         {
                             let _inner_offset = if(contains_regs) { 1 } else { 0 };
                             no_left_adr_mode = true;
-                            offset = 1;
+                            offset = 2;
                             let m = IRInstructionModifier::MemoryAddress(get_imm(0, _inner_offset, "movma*")?);
                             m
                         }
@@ -1015,10 +1235,10 @@ pub mod __asm
                             i
                         }
                         else { return Err(err_unknown()); };
-              
-                    let args = args[offset..args.len()].to_string();
-                    
-                    let mod1: IRInstructionModifier = 
+                        
+                        let args = args[offset..args.len()].to_string();
+                        
+                        let mod1: IRInstructionModifier = 
                         if(args.starts_with("ra"))
                         {
                             if(no_left_adr_mode) { return Err(error_in!((exp.loc), "Address parameter isnt allowed as second argument here!")); }
@@ -1122,9 +1342,9 @@ pub mod __asm
 
                     let mod0: IRInstructionModifier = match &name[3..name.len()]
                     {
-                        "r" => { _inner_offset += 1; IRInstructionModifier::Register (get_reg(0,    "jifr")?) },
-                        "m" => { _inner_offset += 2; IRInstructionModifier::Memory   (get_imm(0, 0, "jifm")?) },
-                        "i" => { _inner_offset += 2; IRInstructionModifier::Immediate(get_imm(0, 0, "jifi")?) },
+                        "r" => { IRInstructionModifier::Register (get_reg(0,    "jifr")?) },
+                        "m" => { IRInstructionModifier::Memory   (get_imm(0, 0, "jifm")?) },
+                        "i" => { IRInstructionModifier::Immediate(get_imm(0, 0, "jifi")?) },
                          _  => return Err(err_unknown()),
                     };
 
@@ -1232,6 +1452,11 @@ pub mod __asm
                 {
 
                     let mut offset = 3;
+
+                    if(name.len() < 3)
+                    {
+                        return Err(error_in!((&exp.loc), "Unrecognised instruction '{}'!", name));
+                    }
 
                     if(name.starts_with("nand")) { offset = 4; }
                     if(name.starts_with(  "or")) { offset = 2; }
@@ -1350,7 +1575,7 @@ pub mod __asm
                         {
                             Literal::Identifier(n, l) =>
                             {
-                                self.register_label_request(n, l, curr_byte_off + off);
+                                self.register_label_request(n, l, (curr_byte_off + off) as u16);
                                 push(0)?; push(0)?;
                                 curr_byte_off += 2;
                             },
@@ -1420,131 +1645,254 @@ pub mod __asm
 
         }
 
-        pub fn parse(&mut self) -> Result<ParseResult, Error>
+        fn parse_section(&mut self, statement: Option<Statement>, all_labels: &mut Vec<Label>) -> Result<(SectionFormat, Option<Statement>), Error>
         {
 
-            let mut bytes: Vec<u8> = Vec::new();
+            self.requested_labels = Vec::new();
 
-            while let Some(s) = self.parse_statement()?
+            let mut section = SectionFormat
             {
+                section: SectionData
+                {
+                    data: Vec::new(),
+                    section: self.director.section,
+                },
+                labels: Vec::new(),
+                exposed_labels: Vec::new(),
+                requested_labels: Vec::new(),
+            };
+
+            let mut statement: Option<Statement> = statement;
+
+            loop
+            {
+
+                let s = match statement
+                {
+                    Some(s) => s,
+                    None => break,
+                };
 
                 match s
                 {
                     Statement::Label(mut label) =>
                     {
-                        label.pos = bytes.len();
-                        for l in &self.labels
+                        label.pos = section.section.len() as i32;
+                        for l in (&mut *all_labels)
                         {
                             if(l.name == label.name)
                             {
                                 return Err(error_in!((label.fileloc), "Label '{}' already exists! (Defined here: {})", label.name, l.fileloc));
                             }
                         }
-                        self.labels.push(label);
+                        all_labels.push(label.clone());
+                        section.labels.push(label);
+                    },
+                    Statement::Expression(exp) =>
+                    {
+                        let len = section.section.len();
+                        self.parse_expression(len, exp, |v| { section.section.data.push(v); Ok(()) })?;
+                    },
+                };
+
+                statement = self.parse_statement()?;
+
+                if(self.director.switched_section) { break; }
+
+            }
+
+            self.director.switched_section = false;
+
+            section.requested_labels = std::mem::take(&mut self.requested_labels);
+            
+            Ok((section, statement))
+
+        }
+
+        pub fn parse(&mut self) -> Result<Format, Error>
+        {
+
+            let mut head_format: Option<SectionFormat> = None;
+            let mut code_format: Option<SectionFormat> = None;
+            let mut data_format: Option<SectionFormat> = None;
+            
+            let mut all_labels: Vec<Label> = Vec::new();
+
+            let mut statement: Option<Statement>;
+
+            loop
+            {
+
+                statement = self.parse_statement()?;
+
+                if(self.director.switched_section) { break; }
+
+                let s = match statement
+                {
+                    Some(s) => s,
+                    None => break,
+                };
+
+                match s
+                {
+                    Statement::Label(label) =>
+                    {
+                        return Err(error_in!((label.fileloc), "Cannot define a label outside of sections!"));
                     },
                     Statement::Expression(exp) =>
                     {
                         let loc = exp.loc.clone();
-                        self.parse_expression(bytes.len(), exp, |v| 
-                            {
-                                if(bytes.len() >= 0x10000)
-                                {
-                                    return Err(error_in!((&loc), "FATAL: EXCEEDING MAXIMUM BYTES OF {}", 0x10000));
-                                }
-                                bytes.push(v);
-                                Ok(())
-                            }
-                        )?;
+                        self.parse_expression(0, exp, |_| { Err(error_in!((&loc), "Cannot write bytes outside of sections!")) })?;
+                    },
+                };
+
+            }
+
+            self.director.switched_section = false;
+
+            while let Some(_) = statement
+            {
+
+                let (section, st) = self.parse_section(statement, &mut all_labels)?;
+                statement = st;
+
+                match section.section.section
+                {
+                    Section::None => unreachable!(),
+                    Section::Code =>
+                    {
+                        if let Some(_) = code_format
+                        {
+                            return Err(error!("Code section defined multiple times!"));
+                        }
+                        code_format = Some(section);
+                    },
+                    Section::Data =>
+                    {
+                        if let Some(_) = data_format
+                        {
+                            return Err(error!("Data section defined multiple times!"));
+                        }
+                        data_format = Some(section);
                     },
                 }
 
             }
 
-            for exp in &mut self.director.exposed_labels
+            for exp in &mut self.director.exported_labels
             {
-                for l in &self.labels
+
+                let mut found_any = false;
+
+                if let Some(format) = &mut head_format
                 {
-                    if(l.name == exp.name)
+                    for l in &format.labels
                     {
-                        exp.pos = l.pos;
-                        exp.fileloc = l.fileloc.clone();
-                    }
-                }
-            }
-
-            if let Some(entry) = &mut self.director.entry_point
-            {
-                let mut found_label = false;
-                for lab in &self.labels
-                {
-                    if(lab.name == entry.name)
-                    {
-                        found_label = true;
-                        entry.fileloc = lab.fileloc.clone();
-                        entry.pos = lab.pos;
-                    }
-                }
-                if(!found_label)
-                {
-                    return Err(error_in!((&entry.fileloc), "Label '{}' cannot be used as an entry point as is does not exist!", entry.name));
-                }
-            }
-
-            Ok(
-                ParseResult
-                {
-                    bytes,
-                    exposed_labels: std::mem::take(&mut self.director.exposed_labels),
-                    entry_point:    std::mem::take((&mut self.director.entry_point)),
-                }
-            )
-
-        }
-
-        pub fn apply_replacers<'a>(&mut self, bytes: &mut Vec<u8>, offset: usize, get_label: impl Fn(String) -> Option<&'a Label>) -> Result<(), Error>
-        {
-
-            for l in &mut self.labels
-            {
-                l.pos += offset;
-            }
-
-            for r in &self.label_requests
-            {
-
-                let mut label: Option<&Label> = None;
-
-                for l in &self.labels { if(r.name == l.name) { label = Some(l); break; } }
-
-                for l in &self.director.external_labels
-                {
-                    if(l.name == r.name)
-                    {
-                        if let Some(l) =  get_label(r.name.clone())
+                        if(l.name == exp.name)
                         {
-                            label = Some(l);
+                            exp.fileloc = l.fileloc.clone();
+                            exp.pos = l.pos;
+                            format.exposed_labels.push(exp.clone());
+                            found_any = true;
                             break;
                         }
                     }
+                    if(found_any) { continue; }
                 }
 
-                if(label.is_none())
+                if let Some(format) = &mut code_format
                 {
-
-                    return Err(error_in!((&r.loc), "Interpreted as label: Label '{}' doesnt exist!", r.name));
-
+                    for l in &format.labels
+                    {
+                        if(l.name == exp.name)
+                        {
+                            exp.fileloc = l.fileloc.clone();
+                            exp.pos = l.pos;
+                            format.exposed_labels.push(exp.clone());
+                            found_any = true;
+                            break;
+                        }
+                    }
+                    if(found_any) { continue; }
                 }
 
-                let pos: u16 = label.unwrap().pos as u16;
-
-                let (l0, l1) = u16_2_u8(pos);
-
-                bytes[r.pos + 0] = l0;
-                bytes[r.pos + 1] = l1;
+                if let Some(format) = &mut data_format
+                {
+                    for l in &format.labels
+                    {
+                        if(l.name == exp.name)
+                        {
+                            exp.fileloc = l.fileloc.clone();
+                            exp.pos = l.pos;
+                            format.exposed_labels.push(exp.clone());
+                            found_any = true;
+                            break;
+                        }
+                    }
+                    if(found_any) { continue; }
+                }
+                
+                if(!found_any)
+                {
+                    return Err(error_in!((&exp.fileloc), "Exposed label '{}' is not defined!", exp.name));
+                }
 
             }
 
-            Ok(())
+            // if let Some(entry) = &mut self.director.entry_point
+            // {
+            //     let mut found_label = false;
+            //     for lab in &self.labels
+            //     {
+            //         if(lab.name == entry.name)
+            //         {
+            //             found_label = true;
+            //             entry.fileloc = lab.fileloc.clone();
+            //             entry.pos = lab.pos;
+            //         }
+            //     }
+            //     if(!found_label)
+            //     {
+            //         return Err(error_in!((&entry.fileloc), "Label '{}' cannot be used as an entry point as is does not exist!", entry.name));
+            //     }
+            // }
+
+            // let mut header_size = 0;
+            // for s in &mut sections
+            // {
+            //     if(s.section == Section::Header)
+            //     {
+            //         header_size += s.data.len();
+            //     }
+            //     match s.validate()
+            //     {
+            //         Err(_) =>
+            //         {
+            //             return Err(error!("Total size of header section exceeds 32 bytes!"));
+            //         },
+            //         _ => {},
+            //     };
+            // }
+            // if(header_size > 32)
+            // {
+            //     return Err(error!("Total size of header section exceeds 32 bytes!"));
+            // }
+
+            let mut sections: Vec<SectionFormat> = Vec::new();
+            if let Some(format) = head_format { sections.push(format); }
+            if let Some(format) = code_format { sections.push(format); }
+            if let Some(format) = data_format { sections.push(format); }
+
+            let header = if(self.director.constructor.constructing) { Some(self.director.constructor.clone()) } else { None };
+
+            Ok(
+                Format
+                {
+                    sections,
+                    external_labels: std::mem::take(&mut self.director.external_labels),
+                    header,
+                }
+            )
 
         }
 
@@ -1553,157 +1901,3 @@ pub mod __asm
 }
 
 pub type ASM = __asm::ASM;
-
-pub mod __linc
-{
-    use colored::Colorize;
-    use squire::instructions::SourceLocation;
-
-    use crate::asm::__asm::Label;
-
-    use super::ASM;
-    use super::__asm::ParseResult;
-
-    use squire::instructions::Error;
-    use squire::{error, error_in};
-
-
-    pub struct Linker
-    {
-        assemblers: Vec<(ASM, Option<ParseResult>)>,
-    }
-    impl Linker
-    {
-        
-        pub fn code(src: String) -> Self
-        {
-            Self
-            {
-                assemblers: vec![ (ASM::code(src), None) ],
-            }
-        }
-        pub fn file(files: Vec<std::sync::Arc<str>>) -> Result<Self, Error>
-        {
-            Ok(Self
-            {
-                assemblers: files.into_iter().map(ASM::file).collect::<Result<Vec<ASM>, Error>>()?.into_iter().map(|a| (a, None)).collect::<Vec<(ASM, Option<ParseResult>)>>()
-            })
-        }
-
-        fn parse_all(&mut self) -> Result<usize, Error>
-        {
-
-            let mut entry_file_index: Option<usize> = None;
-            
-            for i in 0..self.assemblers.len()
-            {
-                let p = &mut self.assemblers[i];
-                let ps = p.0.parse()?;
-                if let Some(e) = &ps.entry_point
-                {
-                    if let Some(_i) = entry_file_index
-                    {
-                        let other = self.assemblers[_i].1.as_ref().unwrap().entry_point.as_ref().unwrap();
-                        return Err(error!("Multiple entry points defined! First here: {}, another here: {}", e.fileloc, other.fileloc));
-                    }
-                    entry_file_index = Some(i);
-                }
-                p.1 = Some(ps);
-            }
-
-            let entry_file_index = match entry_file_index
-            {
-                Some(e) => e,
-                None => 
-                {
-                    println!("{} No entry point specified, asuming start of first file as entry!", "Notice: ".cyan());
-                    let label = Label {
-                        name: "[ASSUMED ENTRY]".to_string(),
-                        fileloc: SourceLocation::from(1, 1, self.assemblers[0].0.get_file()),
-                        pos: 0,
-                        imported: false,
-                    };
-                    self.assemblers[0].1.as_mut().unwrap().entry_point = Some(label);
-                    0
-                }
-            };
-
-            Ok(entry_file_index)
-
-        }
-
-        pub fn link(&mut self) -> Result<Vec<u8>, Error>
-        {
-
-            let entry_index = self.parse_all()?;
-
-            let mut intermediate_collection: Vec<(ParseResult, usize, ASM)> = Vec::new();
-
-            let entry_part = self.assemblers.remove(entry_index);
-
-            let entry_part = ( entry_part.0, entry_part.1.unwrap() );
-
-            let mut offset = entry_part.1.bytes.len();
-
-            intermediate_collection.push(( entry_part.1, 0, entry_part.0 ));
-
-            for part in self.assemblers.drain(..)
-            {
-                let part = ( part.0, part.1.unwrap() );
-                let len = part.1.bytes.len();
-                intermediate_collection.push(( part.1, offset, part.0 ));
-                offset += len;
-            }
-
-            let mut label_index: Vec<Label> = Vec::new();
-
-            for part in &intermediate_collection
-            {
-                for l in &part.0.exposed_labels
-                {
-                    
-                    let mut label = l.clone();
-
-                    for _l in &label_index
-                    {
-                        if(_l.name == l.name)
-                        {
-                            return Err(error_in!((&l.fileloc), "Another label with the same name has already been exposed here: {}", _l.fileloc));
-                        }
-                    }
-                    
-                    label.pos += part.1;
-                    label_index.push(label);
-
-                }
-            }
-
-            let mut code: Vec<u8> = Vec::new();
-
-            for part in &mut intermediate_collection
-            {
-                part.2.apply_replacers(&mut part.0.bytes, part.1, 
-                    |name|
-                    {
-
-                        for l in &label_index
-                        {
-                            if(l.name == name) { return Some(l); }
-                        }
-                        
-                        None
-
-                    }
-                )?;
-                code.extend(&part.0.bytes);
-            }
-
-            Ok(code)
-
-        }
-
-    }
-
-}
-
-pub type Linker = __linc::Linker;

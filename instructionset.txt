@@ -1,5 +1,4 @@
 
-
 16b adresses
 
 binary header
@@ -46,191 +45,198 @@ what offset does for different mov instructions:
 
     for i[]: i+off
 
-00 -> nop
-01 -> halt
-02 -> clrf [clears flags]
-03 -> ray
-04 -> serial out
-05 -> serial in
-0F -> dbg
+instructions marked with [] cannot be executed in user mode!
 
-10 -> 16mov rr
-11 -> 16mov mr
-12 -> 16mov rm
-13 -> 16mov mm
-14 -> 16mov rra
-15 -> 16mov mra
-16 -> 16mov rma
-17 -> 16mov mma
-18 -> 16mov rar
-19 -> 16mov mar
-1A -> 16mov ram
-1B -> 16mov mam
-1C -> 16mov ir
-1D -> 16mov im
-
-20 ->  8mov rr
-21 ->  8mov mr
-22 ->  8mov rm
-23 ->  8mov mm
-24 ->  8mov rra
-25 ->  8mov mra
-26 ->  8mov rma
-27 ->  8mov mma
-28 ->  8mov rar
-29 ->  8mov mar
-2A ->  8mov ram
-2B ->  8mov mam
-2C ->  8mov ir
-2D ->  8mov im
-
-30 -> 16psh r
-31 -> 16psh m
-32 -> 16psh i
-33 ->  8psh r
-34 ->  8psh m
-35 ->  8psh i
-36 -> 16pop r
-37 -> 16pop m
-38 ->  8pop r
-39 ->  8pop m
-
-40 -> jmp r
-41 -> jmp m
-42 -> jmp i
-43 -> jif r
-44 -> jif m
-45 -> jif i
-46 -> call r
-47 -> call m
-48 -> call i
-4F -> ret
-
-60 -> not rr
-61 -> not rm
-62 -> not mr
-63 -> not mm
-64 -> cmp rr
-65 -> cmp rm
-66 -> cmp mr
-67 -> cmp mm
-
-70 -> add s
-71 -> sub s
-72 -> mul s
-73 -> div s
-74 -> mod s
-75 -> and s
-76 ->  or s
-77 -> xor s
-78 -> shl s
-79 -> shr s
-7A ->nand s
-7B -> nor s
-
-80 -> add rrr
-81 -> sub rrr
-82 -> mul rrr
-83 -> div rrr
-84 -> mod rrr
-85 -> and rrr
-86 ->  or rrr
-87 -> xor rrr
-88 -> shl rrr
-89 -> shr rrr
-8A ->nand rrr
-8B -> nor rrr
-
-90 -> add rrm
-91 -> sub rrm
-92 -> mul rrm
-93 -> div rrm
-94 -> mod rrm
-95 -> and rrm
-96 ->  or rrm
-97 -> xor rrm
-98 -> shl rrm
-99 -> shr rrm
-9A ->nand rrm
-9B -> nor rrm
-
-A0 -> add rmr
-A1 -> sub rmr
-A2 -> mul rmr
-A3 -> div rmr
-A4 -> mod rmr
-A5 -> and rmr
-A6 ->  or rmr
-A7 -> xor rmr
-A8 -> shl rmr
-A9 -> shr rmr
-AA ->nand rmr
-AB -> nor rmr
-
-B0 -> add rmm
-B1 -> sub rmm
-B2 -> mul rmm
-B3 -> div rmm
-B4 -> mod rmm
-B5 -> and rmm
-B6 ->  or rmm
-B7 -> xor rmm
-B8 -> shl rmm
-B9 -> shr rmm
-BA ->nand rmm
-BB -> nor rmm
-
-C0 -> add mrr
-C1 -> sub mrr
-C2 -> mul mrr
-C3 -> div mrr
-C4 -> mod mrr
-C5 -> and mrr
-C6 ->  or mrr
-C7 -> xor mrr
-C8 -> shl mrr
-C9 -> shr mrr
-CA ->nand mrr
-CB -> nor mrr
-
-D0 -> add mrm
-D1 -> sub mrm
-D2 -> mul mrm
-D3 -> div mrm
-D4 -> mod mrm
-D5 -> and mrm
-D6 ->  or mrm
-D7 -> xor mrm
-D8 -> shl mrm
-D9 -> shr mrm
-DA ->nand mrm
-DB -> nor mrm
-
-E0 -> add mmr
-E1 -> sub mmr
-E2 -> mul mmr
-E3 -> div mmr
-E4 -> mod mmr
-E5 -> and mmr
-E6 ->  or mmr
-E7 -> xor mmr
-E8 -> shl mmr
-E9 -> shr mmr
-EA ->nand mmr
-EB -> nor mmr
-
-F0 -> add mmm
-F1 -> sub mmm
-F2 -> mul mmm
-F3 -> div mmm
-F4 -> mod mmm
-F5 -> and mmm
-F6 ->  or mmm
-F7 -> xor mmm
-F8 -> shl mmm
-F9 -> shr mmm
-FA ->nand mmm
-FB -> nor mmm
+ 00  -> nop
+[01] -> halt
+ 02  -> clrf [clears flags]
+[04] -> serial out
+[05] -> serial in
+[06] -> io instruction
+ 07  -> psh flags | pshflg
+ 08  -> pop flags | popflg
+ 0E  -> int [interrupt]
+ 0F  -> dbg
+  
+ 10  -> 16mov rr
+ 11  -> 16mov mr
+ 12  -> 16mov rm
+ 13  -> 16mov mm
+ 14  -> 16mov rra
+ 15  -> 16mov mra
+ 16  -> 16mov rma
+ 17  -> 16mov mma
+ 18  -> 16mov rar
+ 19  -> 16mov mar
+ 1A  -> 16mov ram
+ 1B  -> 16mov mam
+ 1C  -> 16mov ir
+ 1D  -> 16mov im
+  
+ 20  ->  8mov rr
+ 21  ->  8mov mr
+ 22  ->  8mov rm
+ 23  ->  8mov mm
+ 24  ->  8mov rra
+ 25  ->  8mov mra
+ 26  ->  8mov rma
+ 27  ->  8mov mma
+ 28  ->  8mov rar
+ 29  ->  8mov mar
+ 2A  ->  8mov ram
+ 2B  ->  8mov mam
+ 2C  ->  8mov ir
+ 2D  ->  8mov im
+  
+ 30  -> 16psh r
+ 31  -> 16psh m
+ 32  -> 16psh i
+ 33  ->  8psh r
+ 34  ->  8psh m
+ 35  ->  8psh i
+ 36  -> 16pop r
+ 37  -> 16pop m
+ 38  ->  8pop r
+ 39  ->  8pop m
+  
+ 40  -> jmp r
+ 41  -> jmp m
+ 42  -> jmp i
+ 43  -> jif r
+ 44  -> jif m
+ 45  -> jif i
+ 46  -> call r
+ 47  -> call m
+ 48  -> call i
+ 4F  -> ret
+  
+ 60  -> not rr
+ 61  -> not rm
+ 62  -> not mr
+ 63  -> not mm
+ 64  -> cmp rr
+ 65  -> cmp rm
+ 66  -> cmp mr
+ 67  -> cmp mm
+ 6E  -> inc r
+ 6F  -> dec r
+  
+ 70  -> add s
+ 71  -> sub s
+ 72  -> mul s
+ 73  -> div s
+ 74  -> mod s
+ 75  -> and s
+ 76  ->  or s
+ 77  -> xor s
+ 78  -> shl s
+ 79  -> shr s
+ 7A  ->nand s
+ 7B  -> nor s
+  
+ 80  -> add rrr
+ 81  -> sub rrr
+ 82  -> mul rrr
+ 83  -> div rrr
+ 84  -> mod rrr
+ 85  -> and rrr
+ 86  ->  or rrr
+ 87  -> xor rrr
+ 88  -> shl rrr
+ 89  -> shr rrr
+ 8A  ->nand rrr
+ 8B  -> nor rrr
+  
+ 90  -> add rrm
+ 91  -> sub rrm
+ 92  -> mul rrm
+ 93  -> div rrm
+ 94  -> mod rrm
+ 95  -> and rrm
+ 96  ->  or rrm
+ 97  -> xor rrm
+ 98  -> shl rrm
+ 99  -> shr rrm
+ 9A  ->nand rrm
+ 9B  -> nor rrm
+  
+ A0  -> add rmr
+ A1  -> sub rmr
+ A2  -> mul rmr
+ A3  -> div rmr
+ A4  -> mod rmr
+ A5  -> and rmr
+ A6  ->  or rmr
+ A7  -> xor rmr
+ A8  -> shl rmr
+ A9  -> shr rmr
+ AA  ->nand rmr
+ AB  -> nor rmr
+  
+ B0  -> add rmm
+ B1  -> sub rmm
+ B2  -> mul rmm
+ B3  -> div rmm
+ B4  -> mod rmm
+ B5  -> and rmm
+ B6  ->  or rmm
+ B7  -> xor rmm
+ B8  -> shl rmm
+ B9  -> shr rmm
+ BA  ->nand rmm
+ BB  -> nor rmm
+  
+ C0  -> add mrr
+ C1  -> sub mrr
+ C2  -> mul mrr
+ C3  -> div mrr
+ C4  -> mod mrr
+ C5  -> and mrr
+ C6  ->  or mrr
+ C7  -> xor mrr
+ C8  -> shl mrr
+ C9  -> shr mrr
+ CA  ->nand mrr
+ CB  -> nor mrr
+  
+ D0  -> add mrm
+ D1  -> sub mrm
+ D2  -> mul mrm
+ D3  -> div mrm
+ D4  -> mod mrm
+ D5  -> and mrm
+ D6  ->  or mrm
+ D7  -> xor mrm
+ D8  -> shl mrm
+ D9  -> shr mrm
+ DA  ->nand mrm
+ DB  -> nor mrm
+  
+ E0  -> add mmr
+ E1  -> sub mmr
+ E2  -> mul mmr
+ E3  -> div mmr
+ E4  -> mod mmr
+ E5  -> and mmr
+ E6  ->  or mmr
+ E7  -> xor mmr
+ E8  -> shl mmr
+ E9  -> shr mmr
+ EA  ->nand mmr
+ EB  -> nor mmr
+  
+ F0  -> add mmm
+ F1  -> sub mmm
+ F2  -> mul mmm
+ F3  -> div mmm
+ F4  -> mod mmm
+ F5  -> and mmm
+ F6  ->  or mmm
+ F7  -> xor mmm
+ F8  -> shl mmm
+ F9  -> shr mmm
+ FA  ->nand mmm
+ FB  -> nor mmm
 
 
 
@@ -241,25 +247,102 @@ version 0x0000:
     word entry_point
     word stack_adr
     word stack_size
-    byte flags [xxxx xxxw]
-        w: window flag: 0 -> no window, 1 -> window
+    byte flags [xxxx xxxx]
 
-ray instruction:
-    communication with the window (window flag must be on)
-    uses raylib for anything window related
-    fetches next byte as instruction:
-        00 -> WindowShouldClose() r
-        01 -> BeginDrawing()
-        02 -> EndDrawing()
-        03 -> DrawRectangle() 
-            -> ma posx
-            -> ma posy
-            -> ma width
-            -> ma height
-            -> ma Color [r,g,b,a]
-        04 -> SetTargetFPS ma
-        05 -> DrawFPS()
-            -> ma posx
-            -> ma posy
-        06 -> ClearBackground()
-            -> ma Color [r,g,b,a]
+io instruction:
+    provides functionality for managing IO
+
+    next byte fetched as instruction:
+        F0 -> Switches IO device
+            -> ra device ID
+
+IO Device ID 0 -> FileSystem [selected by default]
+        0X -> IO 
+        00 -> Reindex() // updates file list
+        01 -> GetFiles() // puts file count into ra [files are indexed at 1 to [count] so this implies all file indices]
+                -> ra
+        02 -> CreateFile() // creates a file with name, returns 0 on success, otherwise err_code
+            -> ra name ptr
+                -> rb
+        03 -> DeleteFile() // deletes file with index, !!! files are reindexed !!!, returns 0 on success
+            -> ra file index
+                -> rb
+        04 -> FileExists() // checks whether the name exists, returns 1 on success
+            -> ra name ptr
+                -> rb
+        05 -> GetSupDir() // returns the upper directory of this path
+            -> ra name ptr
+            -> rb dst ptr
+                -> rc result
+        0E -> QuickRead() // use file path to directly read [quick read due to no fs setup]
+            -> ra ptr to path
+            -> rb dst ptr
+                -> rc length
+                -> rd restult
+        0F -> SetRoot() // sets the root of the FileSystem [although reindex isnt required it is highly recommended to do it anyway]
+            -> ra ptr to path
+                -> rb result [0 = OK]
+
+        1X -> basic file info getters and setters
+        10 -> GetFileName()
+            -> ra index
+            -> rb storage ptr
+                -> rc length
+                -> rd result [0 = OK]
+        11 -> SetFileName() // results in reindex
+            -> ra index
+            -> rb storage ptr
+                -> rc result [0 = OK]
+        12 -> GetFileLength()
+            -> ra index
+                -> rb result [0 = OK]
+        12 -> SetFileLength() // results in reindex
+            -> ra index
+            -> rb length
+                -> rc result [0 = OK]
+
+        20 -> ReadFile()
+            -> ra index
+            -> rb storage ptr
+                -> rc result [0 = OK]
+                -> rd amount of bytes read
+        21 -> ReadFileAt() // will only read 1 char
+            -> ra index
+            -> rb storage ptr
+            -> rc position
+                -> rd result [0 = OK]
+        22 -> WriteFile() // replaces file contents [sets length]
+            -> ra index
+            -> rb length
+            -> rc storage ptr
+                -> rd result [0 = OK]
+        23 -> WriteFileAt() // will only write 1 char
+            -> ra index
+            -> rb storage ptr
+            -> rc position
+                -> rd result [0 = OK]
+
+IO Device ID 1 -> InterruptHandler
+        00 -> GetInterruptID() // gives an interrupt id, 0 means no interrupt
+                -> ra
+        01 -> SetUserMode() // initializes user mode
+        02 -> SetInterruptHandlerLocation() // sets to where interrupts jump
+            -> ra adr
+            // when in user mode, if a restricted instruction is executed the vm will interrupt and jump to the handler
+            // this will disable user mod / enable kernel mod and set the most recent interrupt id to 1
+            //      => interrupt id 1 = user mode access violation
+        03 -> ResolveInterrupt() // resolves the interrupt; "sysret"
+        04 -> RemoveInterrupt()  // resolves the interrupt, doesnt return, doesnt unset kernel mode
+        05 -> SetSubMode() // still kernel mode, but interrupts on hlt
+        
+IO Device ID 2 -> MemoryManager
+        00 -> SuspendMapping() // suspend all mappings
+        01 -> ResumeMapping() // resume all mapping
+        02 -> SetMap() // sets map starting at adr for length bytes and maps to dst, returns mapping ID
+            -> ra adr
+            -> rb length
+            -> rc dst
+                -> rd ID
+        03 -> RmvMap() // removes mapping of specific ID
+            -> ra ID
+ 

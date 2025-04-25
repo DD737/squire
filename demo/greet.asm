@@ -1,4 +1,7 @@
 
+%public_static_void_main_string_args 0
+%section code
+
 movir greeting, ra
 cali putstr
 
@@ -52,6 +55,9 @@ __putstr_end:
     ret
 
 hlt
+
+%section data
+
 greeting: db "Please enter your name: ", 0
 answer0: db "Hello ", 0
 answer1: db ", how are you today?\n", 0

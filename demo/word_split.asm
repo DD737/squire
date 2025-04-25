@@ -1,3 +1,7 @@
+
+%public_static_void_main_string_args 0
+%section code
+
 %def ptr r9
 %def pos r3
 
@@ -83,7 +87,10 @@ _split_words_space_mode:
     movmr space, %last
         cali split_words
     ret
+
 hlt
+
+%section data
 
 one: db 0, 1
 two: db 0, 2

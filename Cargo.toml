@@ -1,6 +1,6 @@
 [package]
 name = "squire"
-version = "0.1.0"
+version = "0.9.5"
 edition = "2021"
 
 [[bin]]
@@ -10,6 +10,14 @@ path = "src/vm/main.rs"
 [[bin]]
 name = "squire_asm"
 path = "src/asm/main.rs"
+
+[[bin]]
+name = "squire_lang"
+path = "src/lang/main.rs"
+
+[[bin]]
+name = "squire_dasm"
+path = "src/dasm/main.rs"
 
 [dependencies]
 colored = "3.0.0"

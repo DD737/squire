@@ -7,6 +7,7 @@ use vm::VM;
 use squire::instructions::Error;
 
 pub mod vm;
+pub mod fs;
 
 fn print_err(e: impl std::fmt::Display)
 {
@@ -33,10 +34,10 @@ fn main()
     let mut _enable_section_mode = false;
     let mut _register_dump = false;
 
-    let mut args = std::env::args().skip(1);
+    let args = std::env::args().skip(1);
     let mut infile: Option<String> = None;
 
-    while let Some(a) = args.next()
+    for a in args
     {
         match a.as_str()
         {
@@ -77,12 +78,12 @@ fn main()
         Some(f) => f,
         None =>
         {
-            print_err(format!("No input file specified!"));
+            print_err("No input file specified!".to_string());
             return;
         }
     };
     
-    println!("{}", "-------------------------".red());
+    println!("{}", "-------------------------".magenta());
 
     let mut vm = VM::new();
 
@@ -96,19 +97,39 @@ fn main()
         }
     };
 
-    let _ = vm.load(bytes, 0);
+    let _ = vm.load_executable(bytes);
 
     if(_enable_debug_print ) { vm.enable_debug_print (); }
     if(_enable_section_mode) { vm.enable_section_mode(); }
 
-    match handle_err(vm.run())
+    if handle_err(vm.run()).is_none()
     {
-        None => return,
-        _ => {},
-    };
 
-    println!("{}", "\n-------------------------".red());
-    println!("Execution finished!");
+        println!("Current RIP: {:#04x} ({:#04x} in bin)", vm.instruction_pointer, vm.instruction_pointer.overflowing_add(32).0);
+
+        let dump_start = std::cmp::max(vm.instruction_pointer, 0x0005) - 5;
+        let dump_end   = std::cmp::min(vm.instruction_pointer, 0xFFFA) + 5;
+
+        let mut pre_line = String::new();
+
+        for ptr in dump_start..dump_end
+        {
+            if(ptr < vm.instruction_pointer)
+            {
+                pre_line.push_str("     ");
+            }
+            print!("{}", format!("{:#04x} ", vm.memget(ptr).unwrap()).blue());
+        }
+        println!();
+
+        println!("{pre_line}{}", "^^^^".bright_blue());
+
+        return;
+
+    }
+
+    println!("{}", "\n\r-------------------------".magenta());
+    println!("\rExecution finished!");
 
     if(_register_dump)
     {
@@ -117,9 +138,9 @@ fn main()
         {
             print!("{:#x} ", r);
         }
-        println!("");
+        println!();
     }
     
-    println!("{}", "-------------------------".red());
+    println!("{}", "\r-------------------------".magenta());
 
 }

@@ -1,5 +1,7 @@
 # contains the data
 
+%section data
+
 # -----SECTION_BSS------
 
 %exp running
@@ -32,10 +34,10 @@ name_cmd_quote: db "quote",0
 
 %exp msg_cmd_help_0
 msg_cmd_help_0: 
-    db "help      -> prints this help\n"
-    db "exit      -> exits the program\n"
-    db "hi        -> prints a little greeting\n"
-    db "quote str -> prints the given text in quotation marks\n"
+    db "   help      -> prints this help\n"
+    db "   exit      -> exits the program\n"
+    db "   hi        -> prints a little greeting\n"
+    db "   quote str -> prints the given text in quotation marks\n"
     db 0
 
 %exp msg_cmd_exit_0
