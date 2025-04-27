@@ -5,9 +5,11 @@ use std::{fs::read, path::Path};
 use colored::{Colorize, ColoredString};
 use vm::VM;
 use squire::instructions::Error;
+use squire::debug::*;
 
 pub mod vm;
 pub mod fs;
+pub mod ray;
 
 fn print_err(e: impl std::fmt::Display)
 {
@@ -34,16 +36,49 @@ fn main()
     let mut _enable_section_mode = false;
     let mut _register_dump = false;
 
-    let args = std::env::args().skip(1);
     let mut infile: Option<String> = None;
+    let mut symbol_file: Option<String> = None;
 
-    for a in args
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next()
     {
         match a.as_str()
         {
             "-d" => _enable_debug_print  = true,
             "-s" => _enable_section_mode = true,
             "-r" => _register_dump = true,
+
+            "-f" =>
+            {
+
+                let a = match args.next()
+                {
+                    Some(s) => s,
+                    None =>
+                    {
+                        print_err("Expected file after -s!");
+                        return;
+                    }
+                };
+
+                let path = Path::new(&a);
+
+                if(!path.exists())
+                {
+                    print_err(format!("'{a}' doesnt exist!"));
+                    return;
+                }
+
+                if(!path.is_file())
+                {
+                    print_err(format!("'{a}' is not a file!"));
+                    return;
+                }
+
+                symbol_file = Some(a);
+
+            },
+            
             _ => 
             {
                 
@@ -82,6 +117,30 @@ fn main()
             return;
         }
     };
+
+    let debug_provider: Option<DebugInfoProvider> = match symbol_file
+    {
+        None => None,
+        Some(f) => Some(
+            match DebugInfoProvider::from_file(f)
+            {
+                Ok(d) => 
+                {
+                    if(d.symbols.is_empty())
+                    {
+                        print_err("Cannot use empty symbols file!");
+                        return;
+                    }
+                    d
+                },
+                Err(e) =>
+                {
+                    print_err(e);
+                    return;
+                }
+            }
+        ),
+    };
     
     println!("{}", "-------------------------".magenta());
 
@@ -105,7 +164,16 @@ fn main()
     if handle_err(vm.run()).is_none()
     {
 
-        println!("Current RIP: {:#04x} ({:#04x} in bin)", vm.instruction_pointer, vm.instruction_pointer.overflowing_add(32).0);
+        let rip = vm.instruction_pointer;
+        let rip_in_file = rip.overflowing_add(32).0;
+        println!("Current RIP: {:#010x} ({:#010x} in bin) [with memmap: {:#010x} | {:#010x} ]", rip, rip_in_file, vm.mem_map(rip), vm.mem_map(rip_in_file));
+
+        if let Some(provider) = debug_provider
+        {
+            let pos = if(rip > 0) { rip - 1} else { 0 };
+            let loc = provider.get_location(pos).unwrap();
+            println!("-> Likely occured here: {}", loc);
+        }
 
         let dump_start = std::cmp::max(vm.instruction_pointer, 0x0005) - 5;
         let dump_end   = std::cmp::min(vm.instruction_pointer, 0xFFFA) + 5;

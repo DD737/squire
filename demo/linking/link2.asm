@@ -2,20 +2,16 @@
 
 %section data
 
-# -----SECTION_BSS------
-
 %exp running
-running: db 1, 1
-
-# -----SECTION_DATA-----
+running: db 1,1,1,1
 
 %exp space
-space: db 0," ",0
+space: db 0,0,0," ",0
 %exp backspace
-backspace: db 0,'\b,0
+backspace: db 0,0,0,'\b,0
 %exp newline
 %exp newline_0
-newline: db 0
+newline: db 0,0,0
 newline_0: db '\n,0
 %exp quote
 quote: db 34,0

@@ -1,7 +1,16 @@
 %public_static_void_main_string_args MAIN
 %section code
 
+%ext putstr
+%ext readline
+%ext print_pre_shell
+%ext shell_readline
+%ext shell_split_args
+%ext shell_input_buffer
+%ext shell_input_vector
+%ext shell_try_run_cmd
 %ext shell_info_running
+%ext terminate_running_program
 
 MAIN:
 
@@ -23,9 +32,19 @@ MAIN_LOOP:
 MAIN_END:
     hlt
 
-%ext terminate_running_program
+_INT_get_adr:
+    movir 2, ra
+    __io 0xF0 # iodevice = MemoryManager
+    __io 0x01 # ResumeMapping()
+        lea rb # get adr
+    __io 0x00 # SuspendMapping()
+    
+    movir 1, ra
+    __io 0xF0 # iodevice = InterruptHandler
+    ret
+
 INT:
-    pshr r1
+    movrm r1, TMP_REG
     pshr ra
     
     movir 2, ra
@@ -70,15 +89,45 @@ INT:
         __in  rb
  _INT_sys_not_03:
 
-    popr r1
+    movir 4, r1
+    cmprr ra, r1
+ jifi _INT_sys_not_04, AB # putstr
+        cali _INT_get_adr
+        movrr rb, ra
+        cali putstr
+ _INT_sys_not_04:
+
+    movir 5, r1
+    cmprr ra, r1
+ jifi _INT_sys_not_05, AB # getstr
+        cali _INT_get_adr
+        movrr rb, ra
+        cali readline
+ _INT_sys_not_05:
+
+    movir 6, r1
+    cmprr ra, r1
+ jifi _INT_sys_not_06, AB # ray call
+    movir 2, ra
+    __io 0xF0 # iodevice = MemoryManager
+    __io 0x01 # ResumeMapping()
+        movrr rb, ra
+        __io 0xF1
+    __io 0x00 # SuspendMapping()
+    
+    movir 1, ra
+    __io 0xF0 # iodevice = InterruptHandler
+ _INT_sys_not_06:
+
+    movmr TMP_REG, r1
     jmpi _INT_sysret
 
  _INT_default:
-    popr r1
+    movmr TMP_REG, r1
     movir msg1, ra
     cali putstr    
  _INT_sysret:
-    
+
     movir 2, ra
     __io 0xF0 # iodevice = MemoryManager
     __io 0x01 # ResumeMapping()
@@ -86,17 +135,9 @@ INT:
     movir 1, ra
     __io 0xF0 # select int handler for io
 
-    __io 0x03 # ResolveInterrupt()
+    __io 0x06 # ResolveInterruptNoRSP()
     dbg # unreachable
 hlt
-
-%ext putstr
-%ext print_pre_shell
-%ext shell_readline
-%ext shell_split_args
-%ext shell_input_buffer
-%ext shell_input_vector
-%ext shell_try_run_cmd
 
 SHELL:
     movim 0, shell_input_vector
@@ -136,7 +177,7 @@ SHELL_DBG:
     movrar ra, rb
     cmprr rb, rz
     jifi __end, E
-    inc ra inc ra
+    inc ra inc ra inc ra inc ra
     pshr ra
     movir txt1, ra
     cali putstr
@@ -153,6 +194,8 @@ SHELL_DBG:
     ret
 
 %section data
+
+TMP_REG: dd 0
 
 msg0: db "hewwwooo mrrrrrp :3\n",0
 msg1: db "INTERRUPT\n",0

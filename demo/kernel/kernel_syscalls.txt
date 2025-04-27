@@ -1,9 +1,14 @@
 syscalls: [int 0x02]
 syscall id in ra
 
+prefix 0X -> basic calls
+
 00 -> invalid AKA error
     invalid syscall code
 01 -> exit
     exits the program
 02 -> calls __out on rb
 03 -> calls __in  on rb
+04 -> putstr; rb->ptr
+05 -> getstr; rb->ptr
+06 -> raylib call [ raylib code in rb ]

@@ -52,13 +52,7 @@ fn main()
 
                 let path = Path::new(&a);
 
-                if(!path.exists())
-                {
-                    print_err(format!("'{a}' doesnt exist!"));
-                    return;
-                }
-
-                if(!path.is_file())
+                if(path.exists() && !path.is_file())
                 {
                     print_err(format!("'{a}' is not a file!"));
                     return;

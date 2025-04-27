@@ -254,7 +254,7 @@ impl FS
             return Ok(( FSResult::IsntFile, None ));
         }
 
-        match std::fs::read(&path)
+        match std::fs::read(path)
         {
             Ok(v) => Ok(( FSResult::OK, Some(v) )),
             Err(e) => Err(Error::fromio(e))
@@ -339,7 +339,7 @@ impl FS
 
     }
 
-    pub fn GetFileLength(&self, index: u8) -> Result<(FSResult, Option<u16>), Error>
+    pub fn GetFileLength(&self, index: u8) -> Result<(FSResult, Option<u32>), Error>
     {
 
         self._check_active()?;
@@ -359,12 +359,12 @@ impl FS
             Err(e) => return Err(Error::fromio(e)),
         };
 
-        let size = meta.len() as u16;
+        let size = meta.len() as u32;
 
         Ok(( FSResult::OK, Some(size) ))
 
     }
-    pub fn SetFileLength(&self, index: u8, length: u16) -> Result<FSResult, Error>
+    pub fn SetFileLength(&self, index: u8, length: u32) -> Result<FSResult, Error>
     {
 
         self._check_active()?;
@@ -416,7 +416,7 @@ impl FS
         Ok(( FSResult::OK, Some(buffer) ))
 
     }
-    pub fn ReadFileAt(&self, index: u8, pos: u16) -> Result<(FSResult, Option<u8>), Error>
+    pub fn ReadFileAt(&self, index: u8, pos: u32) -> Result<(FSResult, Option<u8>), Error>
     {
 
         self._check_active()?;
@@ -483,7 +483,7 @@ impl FS
         Ok(FSResult::OK)
 
     }
-    pub fn WriteFileAt(&self, index: u8, pos: u16, val: u8) -> Result<FSResult, Error>
+    pub fn WriteFileAt(&self, index: u8, pos: u32, val: u8) -> Result<FSResult, Error>
     {
 
         self._check_active()?;

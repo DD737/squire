@@ -4,6 +4,7 @@ use errors::Error;
 use helpers::parse_escape;
 use squire::instructions::*;
 use squire::{error, error_in};
+use squire::debug::DebugSymbol;
 
 #[derive(Debug, Clone)]
 pub enum Token
@@ -11,7 +12,7 @@ pub enum Token
     Comma(SourceLocation),
     Colon(SourceLocation),
     String(String, SourceLocation),
-    Number(i32, SourceLocation),
+    Number(i64, SourceLocation),
     Identifier(String, SourceLocation),
     NewLine(SourceLocation),
     Directive(SourceLocation),
@@ -22,13 +23,13 @@ impl PartialEq for Token
     {
         match self
         {
-            Token::NewLine    (_   ) => match other { Token::NewLine    (_   ) => true, _ => false },
-            Token::Directive  (_   ) => match other { Token::Directive  (_   ) => true, _ => false },
-            Token::Comma      (_   ) => match other { Token::Comma      (_   ) => true, _ => false },
-            Token::Colon      (_   ) => match other { Token::Colon      (_   ) => true, _ => false },
-            Token::String     (_, _) => match other { Token::String     (_, _) => true, _ => false },
-            Token::Number     (_, _) => match other { Token::Number     (_, _) => true, _ => false },
-            Token::Identifier (_, _) => match other { Token::Identifier (_, _) => true, _ => false },
+            Token::NewLine    (_   ) => matches!(other, Token::NewLine    (_   )),
+            Token::Directive  (_   ) => matches!(other, Token::Directive  (_   )),
+            Token::Comma      (_   ) => matches!(other, Token::Comma      (_   )),
+            Token::Colon      (_   ) => matches!(other, Token::Colon      (_   )),
+            Token::String     (_, _) => matches!(other, Token::String     (_, _)),
+            Token::Number     (_, _) => matches!(other, Token::Number     (_, _)),
+            Token::Identifier (_, _) => matches!(other, Token::Identifier (_, _)),
         }
     }
 }
@@ -54,8 +55,8 @@ pub struct AsmTokenizer
     source: String,
     position: usize,
     last_char: Option<char>,
-    line: i32,
-    column: i32,
+    line: i64,
+    column: i64,
     file: Arc<str>,
 }
 impl AsmTokenizer
@@ -267,7 +268,7 @@ impl AsmTokenizer
                         str.push(self.next()?.0);
                     }
 
-                    let num = match i32::from_str_radix(&str, base)
+                    let num = match i64::from_str_radix(&str, base)
                     {
                         Ok(n) => n,
                         Err(_) => return Some(Err(error!("{}: Could not parse number! [if this was not supposed to be a number, prefix it with a non-numeric character]", loc))),
@@ -421,11 +422,7 @@ pub mod __dir
 
         fn get_identifier(&mut self) -> Result<(String, SourceLocation), Error>
         {
-            Ok(match match self.expect(Token::Identifier(String::new(), SourceLocation::new()))
-            {
-                Ok(t) => t,
-                Err(e) => return Err(e),
-            }.unwrap()
+            Ok(match self.expect(Token::Identifier(String::new(), SourceLocation::new()))?.unwrap()
             {
                 Token::Identifier(n, l) => (n, l),
                 _ => unreachable!(),
@@ -433,23 +430,15 @@ pub mod __dir
         }
         fn get_string(&mut self) -> Result<(String, SourceLocation), Error>
         {
-            Ok(match match self.expect(Token::String(String::new(), SourceLocation::new()))
-            {
-                Ok(t) => t,
-                Err(e) => return Err(e),
-            }.unwrap()
+            Ok(match self.expect(Token::String(String::new(), SourceLocation::new()))?.unwrap()
             {
                 Token::String(n, l) => (n, l),
                 _ => unreachable!(),
             })
         }
-        fn get_number(&mut self) -> Result<(i32, SourceLocation), Error>
+        fn get_number(&mut self) -> Result<(i64, SourceLocation), Error>
         {
-            Ok(match match self.expect(Token::Number(0, SourceLocation::new()))
-            {
-                Ok(t) => t,
-                Err(e) => return Err(e),
-            }.unwrap()
+            Ok(match self.expect(Token::Number(0, SourceLocation::new()))?.unwrap()
             {
                 Token::Number(n, l) => (n, l),
                 _ => unreachable!(),
@@ -482,7 +471,10 @@ pub mod __dir
 
                                     let (num,l) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
 
-                                    match self.constructor.set_stack_pos(num as u16, l) { Err(e) => return Some(Err(e)), _ => {} };
+                                    if let Err(e) = self.constructor.set_stack_pos(num as u32, l)
+                                    {
+                                        return Some(Err(e))
+                                    }
         
                                 },
                                 "size" =>
@@ -490,7 +482,10 @@ pub mod __dir
 
                                     let (num,l) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
 
-                                    match self.constructor.set_stack_size(num as u16, l) { Err(e) => return Some(Err(e)), _ => {} };
+                                    if let Err(e) = self.constructor.set_stack_size(num as u32, l)
+                                    {
+                                        return Some(Err(e));
+                                    }
         
                                 },
                                 _ => return Some(Err(error_in!(l, "Expected valid option after %header stack! ('{}' given)", name)))
@@ -502,7 +497,10 @@ pub mod __dir
 
                             let (num,l) = match self.get_number() { Ok(s) => s, Err(e) => return Some(Err(e)) };
 
-                            match self.constructor.set_flags(num as u8, l) { Err(e) => return Some(Err(e)), _ => {} };
+                            if let Err(e) = self.constructor.set_flags(num as u8, l)
+                            {
+                                return Some(Err(e));
+                            }
 
                         },
                         "files" =>
@@ -510,7 +508,10 @@ pub mod __dir
 
                             let (path,l) = match self.get_string() { Ok(s) => s, Err(e) => return Some(Err(e)) };
 
-                            match self.constructor.set_file_loc(path, l) { Err(e) => return Some(Err(e)), _ => {} };
+                            if let Err(e) = self.constructor.set_file_loc(path, l)
+                            {
+                                return Some(Err(e));
+                            }
 
                         },
                         "version" =>
@@ -565,7 +566,7 @@ pub mod __dir
                         },
                         Token::Number(num, l) =>
                         {
-                            match self.constructor.set_straight_entry(num as u16, l)
+                            match self.constructor.set_straight_entry(num as u32, l)
                             {
                                 Ok(_) => {},
                                 Err(e) => return Some(Err(e)),
@@ -693,9 +694,7 @@ pub mod __dir
                                 };
                             }
 
-                            let t = self.get_token();
-                            
-                            t
+                            self.get_token()
 
                         },
                         "endif" => 
@@ -746,7 +745,7 @@ pub mod __dir
                                     match &def.value
                                     {
                                         Some(v) => Some(Ok(v.clone())),
-                                        None => return Some(Err(error_in!(l, "The definition '{}' doesnt hold a value that could be put here!", n))),
+                                        None => Some(Err(error_in!(l, "The definition '{}' doesnt hold a value that could be put here!", n))),
                                     }
 
                                 }
@@ -787,15 +786,12 @@ pub mod __dir
                 _ => return false,
             };
 
-            match name.as_str()
-            {
-                "if"
+            matches!(name.as_str(), 
+                | "if"
                 | "else"
                 | "ifdef"
                 | "ifndef"
-                 => true,
-                _ => false,
-            }
+            )
 
         }
         fn is_block_close(tok: &Token) -> bool
@@ -807,12 +803,9 @@ pub mod __dir
                 _ => return false,
             };
 
-            match name.as_str()
-            {
-                "endif"
-                 => true,
-                _ => false,
-            }
+            matches!(name.as_str(), 
+                | "endif"
+            )
 
         }
 
@@ -860,7 +853,7 @@ pub mod __asm
 
     use __dir::AsmDirector;
     use _instruction_conversion::ins_to_bytes;
-    use squire::executable::__internal::{Section, SectionData, SectionFormat, Format, Label, LabelRequest};
+    use squire::{executable::__internal::{Format, Label, LabelRequest, Section, SectionData, SectionFormat}, instructions::helpers::*};
 
     use super::*;
 
@@ -868,7 +861,7 @@ pub mod __asm
     pub enum Literal
     {
         String(String, SourceLocation),
-        Number(i32, SourceLocation),
+        Number(i64, SourceLocation),
         Identifier(String, SourceLocation),
     }
     #[derive(Debug)]
@@ -884,7 +877,6 @@ pub mod __asm
     {
         Label(Label),
         Expression(Expression),
-        //Literal(Literal),
     }
 
     pub struct ASM
@@ -963,7 +955,7 @@ pub mod __asm
 
         }
 
-        pub fn parse_statement(&mut self) -> Result<Option<Statement>, Error>
+        pub fn parse_statement(&mut self) -> Result<Option<(Statement, DebugSymbol)>, Error>
         {
 
             while let Some(t) = self.peek()?
@@ -990,18 +982,13 @@ pub mod __asm
                 Token::Identifier(id, loc) => (id, loc),
                 _ => unreachable!(),
             };
+
+            let debug_symbol = DebugSymbol::new(name.1.clone(), 0);
             
-            if let Some(next) = self.peek()?
+            if let Some(Token::Colon(_)) = self.peek()?
             {
-                match next
-                {
-                    Token::Colon(_) => 
-                    { 
-                        self.next()?; 
-                        return Ok(Some(Statement::Label(Label { name: name.0, fileloc: name.1, pos: 0 })));
-                    },
-                    _ => {},
-                }
+                self.next()?; 
+                return Ok(Some((Statement::Label(Label { name: name.0, fileloc: name.1, pos: 0 }), debug_symbol)));
             }
 
             let mut expr = Expression
@@ -1038,11 +1025,11 @@ pub mod __asm
 
             }
 
-            Ok(Some(Statement::Expression(expr)))
+            Ok(Some((Statement::Expression(expr), debug_symbol)))
 
         }
 
-        fn register_label_request(&mut self, name: String, loc: SourceLocation, pos: u16)
+        fn register_label_request(&mut self, name: String, loc: SourceLocation, pos: u32)
         {
             self.requested_labels.push(LabelRequest {
                 name, loc, pos
@@ -1074,7 +1061,7 @@ pub mod __asm
             })
 
         }
-        fn expression_to_instruction(&mut self, exp: Expression, curr_byte_off: usize) -> Result<IRInstruction, Error>
+        fn expression_to_instruction(&mut self, exp: Expression, curr_byte_off: usize) -> Result<(IRInstruction, DebugSymbol), Error>
         {
 
             let err_expect_args  = |ins:&str,num:usize| error_in!((&exp.loc), "Instruction {} expected {} arguments, {} found!", ins, num, exp.args.len());
@@ -1095,13 +1082,13 @@ pub mod __asm
             {
                 match &exp.args[index] 
                 { 
-                    Literal::Number(n, _) => Ok(*n as u16), 
-                    Literal::Identifier(s, l) => { self.register_label_request(s.clone(), l.clone(), (curr_byte_off + off + 1) as u16); Ok(0) },
+                    Literal::Number(n, _) => Ok(*n as u32), 
+                    Literal::Identifier(s, l) => { self.register_label_request(s.clone(), l.clone(), (curr_byte_off + off + 1) as u32); Ok(0) },
                     Literal::String(s, l) => 
                     {
                         if(s.len() == 1)
                         {
-                            Ok(s.chars().nth(0).unwrap() as u16)
+                            Ok(s.chars().nth(0).unwrap() as u32)
                         }
                         else
                         {
@@ -1113,70 +1100,82 @@ pub mod __asm
 
             let mut name = exp.name.to_ascii_lowercase();
 
+            let debug = DebugSymbol::new(exp.loc.clone(), curr_byte_off as u32);
+
             match name.as_str()
             {
-                "nop" => return Ok(IRInstruction::NOP),
-                "hlt" => return Ok(IRInstruction::HLT),
-                "clf" => return Ok(IRInstruction::CLF),
-                "pshflg" => return Ok(IRInstruction::PSHFLG),
-                "popflg" => return Ok(IRInstruction::POPFLG),
-                "dbg" => return Ok(IRInstruction::DBG),
-                "ret" => return Ok(IRInstruction::RET),
+                "nop"    => return Ok((IRInstruction::NOP   , debug)),
+                "hlt"    => return Ok((IRInstruction::HLT   , debug)),
+                "clf"    => return Ok((IRInstruction::CLF   , debug)),
+                "pshflg" => return Ok((IRInstruction::PSHFLG, debug)),
+                "popflg" => return Ok((IRInstruction::POPFLG, debug)),
+                "dbg"    => return Ok((IRInstruction::DBG   , debug)),
+                "ret"    => return Ok((IRInstruction::RET   , debug)),
+
+                "lea" =>
+                {
+                    if(exp.args.is_empty())
+                    {
+                        return Err(err_expect_args("lea", 1));
+                    }
+                    let reg = get_reg(0, "lea")?;
+                    return Ok((IRInstruction::LEA(reg), debug));
+                },
 
                 "inc" =>
                 {
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(err_expect_args("inc", 1));
                     }
                     let reg = get_reg(0, "inc")?;
-                    return Ok(IRInstruction::INC(reg));
+                    return Ok((IRInstruction::INC(reg), debug));
                 },
                 "dec" =>
                 {
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(err_expect_args("dec", 1));
                     }
                     let reg = get_reg(0, "dec")?;
-                    return Ok(IRInstruction::DEC(reg));
+                    return Ok((IRInstruction::DEC(reg), debug));
                 },
 
                 "__out" =>
                 {
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(err_expect_args("__out", 1));
                     }
                     let reg = get_reg(0, "__out")?;
-                    return Ok(IRInstruction::SER_OUT(reg));
+                    return Ok((IRInstruction::SER_OUT(reg), debug));
                 },
                 "__in" =>
                 {
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(err_expect_args("__in", 1));
                     }
                     let reg = get_reg(0, "__in")?;
-                    return Ok(IRInstruction::SER_IN(reg));
+                    return Ok((IRInstruction::SER_IN(reg), debug));
                 },
                 "__io" =>
                 {
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(err_expect_args("__io", 1));
                     }
                     let imm = get_imm(0, 0, "__io")?;
-                    return Ok(IRInstruction::SER_IO(imm));
+                    return Ok((IRInstruction::SER_IO(imm), debug));
                 },
                 "int" =>
                 {
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(err_expect_args("int", 1));
                     }
                     let imm = get_imm(0, 0, "int")?;
-                    return Ok(IRInstruction::INT(imm));
+                    return Ok((IRInstruction::INT(imm), debug));
                 },
 
 
@@ -1184,11 +1183,14 @@ pub mod __asm
             }
 
             Ok(
-                if(name.starts_with("mov") || name.starts_with("bmov"))
+                if(name.starts_with("mov") || name.starts_with("wmov") || name.starts_with("dmov") || name.starts_with("bmov"))
                 {
 
-                    let ins_width = if(!name.starts_with("b")) { IRInstructionWidth::B16 } else { IRInstructionWidth::B8 };
-                    if(name.starts_with("b")) { name = name[1..name.len()].to_string(); }
+                    let ins_width =
+                             if(name.starts_with("b")) { IRInstructionWidth::B8  }
+                        else if(name.starts_with("w")) { IRInstructionWidth::B16 }
+                        else                           { IRInstructionWidth::B32 };
+                    if(name.starts_with("b") || name.starts_with("w") || name.starts_with("d")) { name = name[1..name.len()].to_string(); }
         
                     if(exp.args.len() != 2)
                     {
@@ -1214,8 +1216,7 @@ pub mod __asm
                             let _inner_offset = if(contains_regs) { 1 } else { 0 };
                             no_left_adr_mode = true;
                             offset = 2;
-                            let m = IRInstructionModifier::MemoryAddress(get_imm(0, _inner_offset, "movma*")?);
-                            m
+                            IRInstructionModifier::MemoryAddress(get_imm(0, _inner_offset, "movma*")?)
                         }
                         else if(args.starts_with("r"))
                         {
@@ -1224,15 +1225,13 @@ pub mod __asm
                         else if(args.starts_with("m"))
                         {
                             let _inner_offset = if(contains_regs) { 1 } else { 0 };
-                            let m = IRInstructionModifier::Memory(get_imm(0, _inner_offset, "movm*")?);
-                            m
+                            IRInstructionModifier::Memory(get_imm(0, _inner_offset, "movm*")?)
                         }
                         else if(args.starts_with("i"))
                         {
                             let _inner_offset = if(contains_regs) { 1 } else { 0 };
                             no_left_adr_mode = true;
-                            let i = IRInstructionModifier::Immediate(get_imm(0, _inner_offset, "movi*")?);
-                            i
+                            IRInstructionModifier::Immediate(get_imm(0, _inner_offset, "movi*")?)
                         }
                         else { return Err(err_unknown()); };
                         
@@ -1246,7 +1245,7 @@ pub mod __asm
                         }
                         else if(args.starts_with("ma"))
                         {
-                            let _inner_offset = if(contains_regs) { 1 } else { 2 };
+                            let _inner_offset = if(contains_regs) { 1 } else { 4 };
                             if(no_left_adr_mode) { return Err(error_in!((exp.loc), "Address parameter isnt allowed as second argument here!")); }
                             IRInstructionModifier::MemoryAddress(get_imm(1, _inner_offset, "movma*")?)
                         }
@@ -1256,7 +1255,7 @@ pub mod __asm
                         }
                         else if(args.starts_with("m"))
                         {
-                            let _inner_offset = if(contains_regs) { 1 } else { 2 };
+                            let _inner_offset = if(contains_regs) { 1 } else { 4 };
                             IRInstructionModifier::Memory(get_imm(1, _inner_offset, "movm*")?)
                         }
                         else if(args.starts_with("i"))
@@ -1265,14 +1264,17 @@ pub mod __asm
                         }
                         else { return Err(err_unknown()); };
 
-                    IRInstruction::MOV(ins_width, ( mod0, mod1 ))
+                    (IRInstruction::MOV(ins_width, ( mod0, mod1 )), debug)
 
                 }
-                else if(name.starts_with("psh") || name.starts_with("bpsh"))
+                else if(name.starts_with("psh") || name.starts_with("dpsh") || name.starts_with("wpsh") || name.starts_with("bpsh"))
                 {
 
-                    let ins_width = if(!name.starts_with("b")) { IRInstructionWidth::B16 } else { IRInstructionWidth::B8 };
-                    if(name.starts_with("b")) { name = name[1..name.len()].to_string(); }
+                    let ins_width =
+                             if(name.starts_with("b")) { IRInstructionWidth::B8  }
+                        else if(name.starts_with("w")) { IRInstructionWidth::B16 }
+                        else                           { IRInstructionWidth::B32 };
+                    if(name.starts_with("b") || name.starts_with("w") || name.starts_with("d")) { name = name[1..name.len()].to_string(); }
         
                     if(exp.args.len() != 1)
                     {
@@ -1287,14 +1289,17 @@ pub mod __asm
                         _  => return Err(err_unknown()),
                     };
 
-                    IRInstruction::PSH(ins_width, mod0)
+                    (IRInstruction::PSH(ins_width, mod0), debug)
 
                 }
-                else if(name.starts_with("pop") || name.starts_with("bpop"))
+                else if(name.starts_with("pop") || name.starts_with("dpop") || name.starts_with("wpop") || name.starts_with("bpop"))
                 {
 
-                    let ins_width = if(!name.starts_with("b")) { IRInstructionWidth::B16 } else { IRInstructionWidth::B8 };
-                    if(name.starts_with("b")) { name = name[1..name.len()].to_string(); }
+                    let ins_width =
+                             if(name.starts_with("b")) { IRInstructionWidth::B8  }
+                        else if(name.starts_with("w")) { IRInstructionWidth::B16 }
+                        else                           { IRInstructionWidth::B32 };
+                    if(name.starts_with("b") || name.starts_with("w") || name.starts_with("d")) { name = name[1..name.len()].to_string(); }
         
                     if(exp.args.len() != 1)
                     {
@@ -1308,7 +1313,7 @@ pub mod __asm
                          _  => return Err(err_unknown()),
                     };
 
-                    IRInstruction::POP(ins_width, mod0)
+                    (IRInstruction::POP(ins_width, mod0), debug)
 
                 }
                 else if(name.starts_with("jmp"))
@@ -1327,7 +1332,7 @@ pub mod __asm
                          _  => return Err(err_unknown()),
                     };
 
-                    IRInstruction::JMP(mod0)
+                    (IRInstruction::JMP(mod0), debug)
 
                 }
                 else if(name.starts_with("jif"))
@@ -1372,7 +1377,7 @@ pub mod __asm
 
                     //let f = get_imm(1, _inner_offset, "jif")? as u8;
 
-                    IRInstruction::JIF(mod0, f)
+                    (IRInstruction::JIF(mod0, f), debug)
 
                 }
                 else if(name.starts_with("cal"))
@@ -1391,7 +1396,7 @@ pub mod __asm
                          _  => return Err(err_unknown()),
                     };
 
-                    IRInstruction::CAL(mod0)
+                    (IRInstruction::CAL(mod0), debug)
 
                 }
                 else if(name.starts_with("not") || name.starts_with("cmp"))
@@ -1403,7 +1408,7 @@ pub mod __asm
 
                     if(exp.args.len() != 2)
                     {
-                        return Err(err_expect_args(&__base, 2));
+                        return Err(err_expect_args(__base, 2));
                     }
 
                     let args = name[3..name.len()].to_string();
@@ -1418,7 +1423,7 @@ pub mod __asm
                         else if(args.starts_with("m"))
                         {
                             let m = IRInstructionModifier::Memory(get_imm(0, mem_byte_off, &ins("m*"))?);
-                            mem_byte_off += 2;
+                            mem_byte_off += 4;
                             m
                         }
                         else { return Err(err_unknown()); };
@@ -1436,7 +1441,7 @@ pub mod __asm
                         }
                         else { return Err(err_unknown()); };
             
-                    IRInstruction::ALU(IRALUInstruction::Simple(
+                    (IRInstruction::ALU(IRALUInstruction::Simple(
                         if(name.starts_with("not")) 
                         { 
                             _IRALUInstruction2::NOT(( mod0, mod1 ))
@@ -1445,7 +1450,7 @@ pub mod __asm
                         { 
                             _IRALUInstruction2::CMP(( mod0, mod1 ))
                         }
-                    ))
+                    )), debug)
 
                 }
                 else 
@@ -1473,7 +1478,7 @@ pub mod __asm
 
                     if(args == "s")
                     {
-                        if(exp.args.len() != 0)
+                        if(!exp.args.is_empty())
                         {
                             return Err(err_expect_args(&ins("s"), 0));
                         }
@@ -1494,7 +1499,7 @@ pub mod __asm
                             else if(args.starts_with("m"))
                             {
                                 let m = IRInstructionModifier::Memory(get_imm(0, mem_byte_off, &ins("m*"))?);
-                                mem_byte_off += 2;
+                                mem_byte_off += 4;
                                 m
                             }
                             else { return Err(err_unknown()); };
@@ -1509,7 +1514,7 @@ pub mod __asm
                             else if(args.starts_with("m"))
                             {
                                 let m = IRInstructionModifier::Memory(get_imm(1, mem_byte_off, &ins("m*"))?);
-                                mem_byte_off += 2;
+                                mem_byte_off += 4;
                                 m
                             }
                             else { return Err(err_unknown()); };
@@ -1531,7 +1536,7 @@ pub mod __asm
 
                     }
 
-                    IRInstruction::ALU(IRALUInstruction::Complex(
+                    (IRInstruction::ALU(IRALUInstruction::Complex(
                              if(name.starts_with( "add")) { _IRALUInstruction3:: ADD(_modifiers) }
                         else if(name.starts_with( "sub")) { _IRALUInstruction3:: SUB(_modifiers) }
                         else if(name.starts_with( "mul")) { _IRALUInstruction3:: MUL(_modifiers) }
@@ -1545,24 +1550,24 @@ pub mod __asm
                         else if(name.starts_with("nand")) { _IRALUInstruction3::NAND(_modifiers) }
                         else if(name.starts_with( "nor")) { _IRALUInstruction3:: NOR(_modifiers) }
                         else { return Err(err_unknown()); }
-                    ))
+                    )), debug)
 
                 }
             )
 
         }
 
-        fn parse_expression(&mut self, off: usize, exp: Expression, mut push: impl FnMut(u8) -> Result<(), Error>) -> Result<(), Error>
+        fn parse_expression(&mut self, off: usize, exp: Expression, mut push: impl FnMut(u8) -> Result<(), Error>) -> Result<DebugSymbol, Error>
         {
             
             let err_expect_args  = |ins:&str,num:usize| error_in!((&exp.loc), "Instruction {} expected {} arguments, {} found!", ins, num, exp.args.len());
 
             match exp.name.as_str()
             {
-                "db" =>
+                "db" | "dw" | "dd" =>
                 {
 
-                    if(exp.args.len() < 1)
+                    if(exp.args.is_empty())
                     {
                         return Err(error_in!((&exp.loc), "Instruction db expects at least one argument!"));
                     }
@@ -1575,27 +1580,73 @@ pub mod __asm
                         {
                             Literal::Identifier(n, l) =>
                             {
-                                self.register_label_request(n, l, (curr_byte_off + off) as u16);
-                                push(0)?; push(0)?;
+                                self.register_label_request(n, l, (curr_byte_off + off) as u32);
+                                push(0)?; push(0)?; push(0)?; push(0)?;
                                 curr_byte_off += 2;
                             },
                             Literal::Number(n, _) =>
                             {
-                                push(n as u8)?;
-                                curr_byte_off += 1;
+                                match exp.name.as_str()
+                                {
+                                    "db" => 
+                                    {
+                                        push(n as u8)?;
+                                        curr_byte_off += 1;
+                                    },
+                                    "dw" => 
+                                    {
+                                        let v = u16_2_u8(n as u16);
+                                        push(v.0)?;
+                                        push(v.1)?;
+                                        curr_byte_off += 2;
+                                    },
+                                    "dd" => 
+                                    {
+                                        let v = u32_2_u8(n as u32);
+                                        push(v.0)?;
+                                        push(v.1)?;
+                                        push(v.2)?;
+                                        push(v.3)?;
+                                        curr_byte_off += 4;
+                                    },
+                                    _ => unreachable!(),
+                                }
                             },
                             Literal::String(s, _) =>
                             {
-                                for c in s.chars()
+                                for n in s.chars()
                                 {
-                                    push(c as u8)?;
-                                    curr_byte_off += 1;
+                                    match exp.name.as_str()
+                                    {
+                                        "db" => 
+                                        {
+                                            push(n as u8)?;
+                                            curr_byte_off += 1;
+                                        },
+                                        "dw" => 
+                                        {
+                                            let v = u16_2_u8(n as u16);
+                                            push(v.0)?;
+                                            push(v.1)?;
+                                            curr_byte_off += 2;
+                                        },
+                                        "dd" => 
+                                        {
+                                            let v = u32_2_u8(n as u32);
+                                            push(v.0)?;
+                                            push(v.1)?;
+                                            push(v.2)?;
+                                            push(v.3)?;
+                                            curr_byte_off += 4;
+                                        },
+                                        _ => unreachable!(),
+                                    }
                                 }
                             }
                         }
                     }
                     
-                    Ok(())
+                    Ok(DebugSymbol::new(exp.loc.clone(), off as u32))
 
                 },
                 "resb" | "resw" => 
@@ -1633,19 +1684,20 @@ pub mod __asm
                         }
                     }
 
-                    Ok(())
+                    Ok(DebugSymbol::new(exp.loc.clone(), off as u32))
 
                 },
                 _ => 
                 {
                     let ins = self.expression_to_instruction(exp, off)?;
-                    ins_to_bytes(ins, push)
+                    ins_to_bytes(ins.0, push)?;
+                    Ok(ins.1)
                 }
             }
 
         }
 
-        fn parse_section(&mut self, statement: Option<Statement>, all_labels: &mut Vec<Label>) -> Result<(SectionFormat, Option<Statement>), Error>
+        fn parse_section(&mut self, statement: Option<(Statement, DebugSymbol)>, all_labels: &mut Vec<Label>) -> Result<(SectionFormat, Option<(Statement, DebugSymbol)>), Error>
         {
 
             self.requested_labels = Vec::new();
@@ -1660,24 +1712,21 @@ pub mod __asm
                 labels: Vec::new(),
                 exposed_labels: Vec::new(),
                 requested_labels: Vec::new(),
+                symbols: Vec::new(),
             };
 
-            let mut statement: Option<Statement> = statement;
+            let mut statement: Option<(Statement, DebugSymbol)> = statement;
 
-            loop
+            while let Some(mut s) = statement
             {
 
-                let s = match statement
-                {
-                    Some(s) => s,
-                    None => break,
-                };
+                s.1.pos = section.section.len() as u32;
 
-                match s
+                match s.0
                 {
                     Statement::Label(mut label) =>
                     {
-                        label.pos = section.section.len() as i32;
+                        label.pos = section.section.len() as i64;
                         for l in (&mut *all_labels)
                         {
                             if(l.name == label.name)
@@ -1694,6 +1743,8 @@ pub mod __asm
                         self.parse_expression(len, exp, |v| { section.section.data.push(v); Ok(()) })?;
                     },
                 };
+
+                section.symbols.push(s.1);
 
                 statement = self.parse_statement()?;
 
@@ -1718,7 +1769,7 @@ pub mod __asm
             
             let mut all_labels: Vec<Label> = Vec::new();
 
-            let mut statement: Option<Statement>;
+            let mut statement: Option<(Statement, DebugSymbol)>;
 
             loop
             {
@@ -1733,7 +1784,7 @@ pub mod __asm
                     None => break,
                 };
 
-                match s
+                match s.0
                 {
                     Statement::Label(label) =>
                     {
@@ -1750,7 +1801,7 @@ pub mod __asm
 
             self.director.switched_section = false;
 
-            while let Some(_) = statement
+            while statement.is_some()
             {
 
                 let (section, st) = self.parse_section(statement, &mut all_labels)?;
@@ -1761,7 +1812,7 @@ pub mod __asm
                     Section::None => unreachable!(),
                     Section::Code =>
                     {
-                        if let Some(_) = code_format
+                        if(code_format.is_some())
                         {
                             return Err(error!("Code section defined multiple times!"));
                         }
@@ -1769,7 +1820,7 @@ pub mod __asm
                     },
                     Section::Data =>
                     {
-                        if let Some(_) = data_format
+                        if(data_format.is_some())
                         {
                             return Err(error!("Data section defined multiple times!"));
                         }
@@ -1838,45 +1889,6 @@ pub mod __asm
                 }
 
             }
-
-            // if let Some(entry) = &mut self.director.entry_point
-            // {
-            //     let mut found_label = false;
-            //     for lab in &self.labels
-            //     {
-            //         if(lab.name == entry.name)
-            //         {
-            //             found_label = true;
-            //             entry.fileloc = lab.fileloc.clone();
-            //             entry.pos = lab.pos;
-            //         }
-            //     }
-            //     if(!found_label)
-            //     {
-            //         return Err(error_in!((&entry.fileloc), "Label '{}' cannot be used as an entry point as is does not exist!", entry.name));
-            //     }
-            // }
-
-            // let mut header_size = 0;
-            // for s in &mut sections
-            // {
-            //     if(s.section == Section::Header)
-            //     {
-            //         header_size += s.data.len();
-            //     }
-            //     match s.validate()
-            //     {
-            //         Err(_) =>
-            //         {
-            //             return Err(error!("Total size of header section exceeds 32 bytes!"));
-            //         },
-            //         _ => {},
-            //     };
-            // }
-            // if(header_size > 32)
-            // {
-            //     return Err(error!("Total size of header section exceeds 32 bytes!"));
-            // }
 
             let mut sections: Vec<SectionFormat> = Vec::new();
             if let Some(format) = head_format { sections.push(format); }

@@ -1,0 +1,62 @@
+%entry 0
+%section code
+
+dbg
+db 0
+
+pshi 800
+pshi 600
+pshi msg
+bpshi 0
+movir 0x06, ra
+movir 0xEF, rb # OpenWindow
+int 0x02
+
+loop:
+
+movir 0x06, ra
+movir 0x01, rb # BeginDrawing
+int 0x02
+
+pshm BLACK
+movir 0x06, ra
+movir 0x05, rb # CLearBackground
+int 0x02
+
+pshi 20
+pshi 20
+pshi 40
+pshm WHITE
+pshi msg
+movir 0x06, ra
+movir 0x06, rb # DrawText
+int 0x02
+
+movir 0x06, ra
+movir 0x02, rb # EndDrawing
+int 0x02
+
+movir 0x06, ra
+movir 0x00, rb # WindowShouldClose
+int 0x02
+
+bpopr ra
+cmprr ra, rz
+jifi loop, E
+
+movir 0x06, ra
+movir 0xEE, rb # CloseWindow
+int 0x02
+
+movir 0x01, ra
+int 0x02
+
+%section data
+
+msg: db "Hello world test!",0
+
+BLACK: db 0x00, 0x00, 0x00, 0xFF
+WHITE: db 0xFF, 0xFF, 0xFF, 0xFF
+RED:   db 0xFF, 0x00, 0x00, 0xFF
+GREEN: db 0x00, 0xFF, 0x00, 0xFF
+BLUE:  db 0x00, 0x00, 0xFF, 0xFF

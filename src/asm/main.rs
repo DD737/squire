@@ -100,6 +100,9 @@ fn main()
     let mut outfile = String::from("out.bin");
     let mut infiles: Vec<Arc<str>> = Vec::new();
 
+    let mut debug_cr_file: Option<String> = None;
+    let mut debug_hr_file: Option<String> = None;
+
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next()
     {
@@ -107,7 +110,7 @@ fn main()
         {
 
             "-t" => _debug_print_tokens = true,
-            "-d" => _debug_print_direct = true,
+            "-p" => _debug_print_direct = true,
             "-s" => _debug_print_parser = true,
 
             "-o" =>
@@ -118,6 +121,31 @@ fn main()
                     None =>
                     {
                         print_err("Expected file after -o!");
+                        return;
+                    }
+                }
+            },
+
+            "-d" =>
+            {
+                debug_cr_file = match args.next()
+                {
+                    Some(s) => Some(s),
+                    None =>
+                    {
+                        print_err("Expected file after -d!");
+                        return;
+                    }
+                }
+            },
+            "-D" =>
+            {
+                debug_hr_file = match args.next()
+                {
+                    Some(s) => Some(s),
+                    None =>
+                    {
+                        print_err("Expected file after -d!");
                         return;
                     }
                 }
@@ -200,9 +228,37 @@ fn main()
         None => return,
     };
 
-    let bytes = Linker::executable_to_bytes(exe, true);
+    let bytes = Linker::executable_to_bytes(exe.0, true);
     
     let _ = write(outfile, bytes);
+
+    if let Some(debug_hr_file) = debug_hr_file
+    {
+        
+        let mut output = String::new();
+
+        for d in &exe.1
+        {
+            output.push_str(&d.to_line());
+            output.push('\n');
+        }
+
+        let _ = write(debug_hr_file, output);
+
+    }
+    if let Some(debug_cr_file) = debug_cr_file
+    {
+        
+        let mut output: Vec<u8> = vec![0xFF, 0xFF];
+
+        for d in &exe.1
+        {
+            output.append(&mut d.to_bytes());
+        }
+
+        let _ = write(debug_cr_file, output);
+
+    }
 
     println!("{}", "-------------------------".magenta());
 

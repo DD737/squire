@@ -3,16 +3,98 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use std::io::{stdout, Write};
+use std::ops::Div;
 use std::time::Duration;
 use std::collections::HashMap;
 
 use _instruction_conversion::bytes_to_ins;
 use squire::error;
 use squire::instructions::{*, helpers::*};
-
 use crate::fs::FS;
+use crate::ray::RAY;
 
 
+
+const RAM_PAGE_SIZE : usize = 0x10000_usize;
+const RAM_PAGE_COUNT: usize = (0x100000000_usize.div_ceil(RAM_PAGE_SIZE));
+
+#[allow(non_camel_case_types)]
+pub struct RAM
+{
+    list: [Option<usize>; RAM_PAGE_COUNT],
+    pages: Vec<[u8; RAM_PAGE_SIZE]>,
+}
+impl Default for RAM
+{
+    fn default() -> Self { RAM::new() }
+}
+impl RAM
+{
+
+    pub fn new() -> Self
+    {
+        Self
+        {
+            list: [None; RAM_PAGE_COUNT],
+            pages: Vec::new(),
+        }
+    }
+
+    fn split_index(i: u32) -> (usize, usize)
+    {
+        let i = i as usize;
+        let in_page_index = i % RAM_PAGE_SIZE;
+        let page_index = (i - in_page_index).div(RAM_PAGE_SIZE);
+        (page_index, in_page_index)
+    }
+    fn get_page(&mut self, i: usize) -> &mut [u8; RAM_PAGE_SIZE]
+    {
+        if(self.list[i].is_none())
+        {
+            self.pages.push( [0; RAM_PAGE_SIZE] );
+            self.list[i] = Some( self.pages.len() - 1 );
+        }
+        &mut self.pages[self.list[i].unwrap()]
+    }
+    fn get_page_safe(&self, i: usize) -> Option<&[u8; RAM_PAGE_SIZE]>
+    {
+        Some(&self.pages[self.list[i]?])
+    }
+
+    pub fn get_safe(&self, i: u32) -> u8
+    {
+
+        let (page_index, i) = Self::split_index(i);
+
+        let page = self.get_page_safe(page_index);
+
+        if let Some(page) = page { page[i] }
+        else { 0 }
+
+    }
+    pub fn get(&mut self, i: u32) -> u8
+    {
+
+        let (page_index, i) = Self::split_index(i);
+
+        let page = self.get_page(page_index);
+
+        page[i]
+
+    }
+    pub fn set(&mut self, i: u32, v: u8)
+    {
+        let _i = i;
+
+        let (page_index, i) = Self::split_index(i);
+
+        let page = self.get_page(page_index);
+
+        page[i] = v;
+
+    }
+
+}
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -36,21 +118,21 @@ impl TryFrom<u8> for InterruptID
     fn try_from(value: u8) -> Result<Self, Error>
     {
         if(value >= (InterruptID::__Err_Highest as u8)) { return Err(error!("Cannot cast {:#x} to Interrupt ID because it is too big!", value)) }
-        unsafe { Ok(std::mem::transmute(value)) }
+        unsafe { Ok(std::mem::transmute::<u8, InterruptID>(value)) }
     }
 }
 
 #[allow(dead_code)]
 pub struct MemoryMap
 {
-    id: u16,
-    map: HashMap<u16, u16>,
+    id: u32,
+    map: HashMap<u32, u32>,
 }
 impl MemoryMap
 {
-    pub fn from(id: u16, adr: u16, size: u16, dst: u16) -> Self
+    pub fn from(id: u32, adr: u32, size: u32, dst: u32) -> Self
     {
-        let mut map: HashMap<u16, u16> = HashMap::new();
+        let mut map: HashMap<u32, u32> = HashMap::new();
         for i in 0..size
         {
             map.insert(adr + i, dst + i);
@@ -82,10 +164,10 @@ impl Interrupt
 #[derive(Debug, Clone)]
 pub struct InterruptState
 {
-    pub registers: [u16; 13],
+    pub registers: [u32; 13],
     pub flags: u8,
-    pub instruction_pointer: u16,
-    pub stack_pointer: u16,
+    pub instruction_pointer: u32,
+    pub stack_pointer: u32,
     pub user_mode: bool,
     pub  sub_mode: bool,
 }
@@ -94,8 +176,8 @@ pub struct VM
 {
 
     /// only 13 spaces bc last 3 registers arent stored here
-    pub registers: [u16; 13],
-    pub memory: [u8; 0x10000],
+    pub registers: [u32; 13],
+    pub memory: RAM,
 
     code_section: Vec<u8>,
     section_mode: bool,
@@ -106,11 +188,11 @@ pub struct VM
     running: bool,
     pub flags: u8,
     
-    pub instruction_pointer: u16,
-    pub stack_pointer: u16,
+    pub instruction_pointer: u32,
+    pub stack_pointer: u32,
 
-    stack_position: u16,
-    stack_size: u16,
+    stack_position: u32,
+    stack_size: u32,
 
     debug_print: bool,
 
@@ -118,11 +200,17 @@ pub struct VM
     fs: FS,
 
     interrupt: Option<Interrupt>,
-    interrupt_location: u16,
+    interrupt_location: u32,
 
     memory_maps: Vec<MemoryMap>,
     memory_mapping_suspended: bool,
 
+    ray: RAY,
+
+}
+impl Default for VM
+{
+    fn default() -> Self { VM::new() }
 }
 impl VM
 {
@@ -134,7 +222,7 @@ impl VM
         {
             
             registers: [0; 13],
-            memory: [0; 0x10000],
+            memory: RAM::new(),
             
             code_section: Vec::new(),
             section_mode: false,
@@ -161,11 +249,13 @@ impl VM
             memory_maps: Vec::new(),
             memory_mapping_suspended: false,
 
+            ray: RAY::new(),
+
         }
 
     }
 
-    fn mem_map(&self, adr: u16) -> u16
+    pub fn mem_map(&self, adr: u32) -> u32
     {
         if(!self.memory_mapping_suspended)
         {
@@ -177,10 +267,10 @@ impl VM
                 }
             }
         }
-        return adr;
+        adr
     }
 
-    pub fn get_reg(&self, reg:IRRegister) -> u16
+    pub fn get_reg(&self, reg:IRRegister) -> u32
     {
         match reg
         {
@@ -190,7 +280,7 @@ impl VM
             _ => self.registers[reg as usize],
         }
     }
-    pub fn set_reg(&mut self, val: u16, reg:IRRegister)
+    pub fn set_reg(&mut self, val: u32, reg:IRRegister)
     {
         match reg
         {
@@ -214,7 +304,7 @@ impl VM
         }
         else
         {
-            self.memory[self.instruction_pointer as usize]
+            self.memory.get(self.instruction_pointer)
         };
         let p = self.instruction_pointer.overflowing_add(1);
         if(p.1)
@@ -227,13 +317,13 @@ impl VM
 
     fn stack_push(&mut self, v: u8) -> Result<(), Error>
     {
-        if(self.stack_pointer as u32 >= 0xFFFF || self.stack_pointer >= self.stack_position + self.stack_size)
+        if(self.stack_pointer as u64 >= 0xFFFF || self.stack_pointer >= self.stack_position + self.stack_size)
         {
             Err(error!("Stackoverflow!"))
         }
         else
         {
-            self.memory[self.stack_pointer as usize] = v;
+            self.memory.set(self.stack_pointer, v);
             self.stack_pointer += 1;
             Ok(())
         }
@@ -247,9 +337,29 @@ impl VM
         else
         {
             let v = u16_2_u8(v);
-            self.memory[self.stack_pointer as usize] = v.0;
+            self.memset(self.stack_pointer, v.0)?;
             self.stack_pointer += 1;
-            self.memory[self.stack_pointer as usize] = v.1;
+            self.memset(self.stack_pointer, v.1)?;
+            self.stack_pointer += 1;
+            Ok(())
+        }
+    }
+    fn stack_push32(&mut self, v: u32) -> Result<(), Error>
+    {
+        if(self.stack_pointer >= 0xFFFC || self.stack_pointer + 3 >= self.stack_position + self.stack_size)
+        {
+            Err(error!("Stackoverflow!"))
+        }
+        else
+        {
+            let v = u32_2_u8(v);
+            self.memset(self.stack_pointer, v.0)?;
+            self.stack_pointer += 1;
+            self.memset(self.stack_pointer, v.1)?;
+            self.stack_pointer += 1;
+            self.memset(self.stack_pointer, v.2)?;
+            self.stack_pointer += 1;
+            self.memset(self.stack_pointer, v.3)?;
             self.stack_pointer += 1;
             Ok(())
         }
@@ -263,7 +373,7 @@ impl VM
         else
         {
             self.stack_pointer -= 1;
-            Ok(self.memory[self.stack_pointer as usize])
+            Ok(self.memory.get(self.stack_pointer))
         }
     }
     fn stack_pop16(&mut self) -> Result<u16, Error>
@@ -275,42 +385,98 @@ impl VM
         else
         {
             self.stack_pointer -= 1;
-            let a = self.memory[self.stack_pointer as usize];
+            let a = self.memory.get(self.stack_pointer);
             self.stack_pointer -= 1;
-            let b = self.memory[self.stack_pointer as usize];
+            let b = self.memory.get(self.stack_pointer);
             Ok(u8_2_u16((b, a)))
         }
     }
-
-    pub fn memset(&mut self, adr: u16, v: u8) -> Result<(), Error>
+    fn stack_pop32(&mut self) -> Result<u32, Error>
     {
-        self.memory[self.mem_map(adr) as usize] = v;
+        if(self.stack_pointer - 3 <= self.stack_position)
+        {
+            Err(error!("Stackunderflow!"))
+        }
+        else
+        {
+            self.stack_pointer -= 1;
+            let a = self.memory.get(self.stack_pointer);
+            self.stack_pointer -= 1;
+            let b = self.memory.get(self.stack_pointer);
+            self.stack_pointer -= 1;
+            let c = self.memory.get(self.stack_pointer);
+            self.stack_pointer -= 1;
+            let d = self.memory.get(self.stack_pointer);
+            Ok(u8_2_u32((d, c, b, a)))
+        }
+    }
+
+    pub fn memset(&mut self, adr: u32, v: u8) -> Result<(), Error>
+    {
+        self.memory.set(self.mem_map(adr), v);
         Ok(())
     }
-    fn memset16(&mut self, adr: u16, v: u16) -> Result<(), Error>
+    fn memset16(&mut self, adr: u32, v: u16) -> Result<(), Error>
     {
         let adr = self.mem_map(adr);
-        if(adr as u32 >= 0xFFFF)
+        if(adr as u64 >= 0xFFFF)
         {
             return Err(error!("Cannot memset outside of ram range!"))
         }
         let v = u16_2_u8(v);
-        self.memory[ adr      as usize] = v.0;
-        self.memory[(adr + 1) as usize] = v.1;
+        self.memory.set(adr    , v.0);
+        self.memory.set(adr + 1, v.1);
         Ok(())
     }
-    pub fn memget(&self, adr: u16) -> Result<u8, Error>
-    { Ok(self.memory[self.mem_map(adr) as usize]) }
-    fn memget16(&self, adr: u16) -> Result<u16, Error>
+    fn memset32(&mut self, adr: u32, v: u32) -> Result<(), Error>
+    {
+        let adr = self.mem_map(adr);
+        if(adr as u64 >= 0xFFFF)
+        {
+            println!("{adr:#010x}");
+            return Err(error!("Cannot memset outside of ram range!"))
+        }
+        let v = u32_2_u16(v);
+        self.memset16(adr    , v.0)?;
+        self.memset16(adr + 2, v.1)?;
+        Ok(())
+    }
+    pub fn memget(&mut self, adr: u32) -> Result<u8, Error>
+    { Ok(self.memory.get(self.mem_map(adr))) }
+    fn memget16(&mut self, adr: u32) -> Result<u16, Error>
     { 
         let adr = self.mem_map(adr);
-        if(adr as u32 >= 0xFFFF)
+        if(adr as u64 >= 0xFFFF)
         {
             return Err(error!("Cannot memget outside of ram range!"))
         }
-        let a = self.memory[ adr      as usize];
-        let b = self.memory[(adr + 1) as usize];
+        let a = self.memory.get(adr    );
+        let b = self.memory.get(adr + 1);
         Ok(u8_2_u16((a, b)))
+    }
+    fn memget32(&mut self, adr: u32) -> Result<u32, Error>
+    { 
+        let adr = self.mem_map(adr);
+        if(adr as u64 >= 0xFFFF)
+        {
+            return Err(error!("Cannot memget outside of ram range!"))
+        }
+        let a = self.memget16(adr    )?;
+        let b = self.memget16(adr + 2)?;
+        Ok(u16_2_u32((a, b)))
+    }
+    fn memget32_safe(&self, adr: u32) -> Result<u32, Error>
+    { 
+        let adr = self.mem_map(adr);
+        if(adr as u64 >= 0xFFFF)
+        {
+            return Err(error!("Cannot memget outside of ram range!"))
+        }
+        let a = self.memory.get_safe(adr    );
+        let b = self.memory.get_safe(adr + 1);
+        let c = self.memory.get_safe(adr + 2);
+        let d = self.memory.get_safe(adr + 3);
+        Ok(u8_2_u32((a, b, c, d)))
     }
 
     fn set_flag(&mut self, flag: u8, status: bool) -> Result<(), Error>
@@ -338,7 +504,7 @@ impl VM
         let left = match &m.0
         {
             IRInstructionModifier::Register (r) => self.get_reg  (*r),
-            IRInstructionModifier::Memory   (a) => self.memget16 (*a)?,
+            IRInstructionModifier::Memory   (a) => self.memget32 (*a)?,
             _ => return Err(error!("INVALID ALU2 ARGUMENT {:?}", m)),
         };
         
@@ -351,7 +517,7 @@ impl VM
                 let right = match &m.1
                 {
                     IRInstructionModifier::Register (r) => self.get_reg  (*r),
-                    IRInstructionModifier::Memory   (a) => self.memget16 (*a)?,
+                    IRInstructionModifier::Memory   (a) => self.memget32 (*a)?,
                     _ => return Err(error!("INVALID CMP ARGUMENT {:?}", m)),
                 };
 
@@ -359,9 +525,12 @@ impl VM
                 self.set_flag(FLAG_A, false)?;
                 self.set_flag(FLAG_B, false)?;
 
-                     if(left == right) { self.set_flag(FLAG_E, true)?; }
-                else if(left >  right) { self.set_flag(FLAG_A, true)?; }
-                else if(left <  right) { self.set_flag(FLAG_B, true)?; }
+                match left.cmp(&right)
+                {
+                    std::cmp::Ordering::Equal   => self.set_flag(FLAG_E, true)?,
+                    std::cmp::Ordering::Less    => self.set_flag(FLAG_B, true)?,
+                    std::cmp::Ordering::Greater => self.set_flag(FLAG_A, true)?,
+                }
 
                 return Ok(());
 
@@ -371,7 +540,7 @@ impl VM
         match &m.1
         {
             IRInstructionModifier::Register (r) => self.set_reg  (value, *r),
-            IRInstructionModifier::Memory   (a) => self.memset16 (*a, value)?,
+            IRInstructionModifier::Memory   (a) => self.memset32 (*a, value)?,
             _ => return Err(error!("INVALID ALU2 ARGUMENT {:?}", m)),
         };
 
@@ -402,12 +571,12 @@ impl VM
             Some(m) => match &m.1
                 {
                     IRInstructionModifier::Register (r) => self.get_reg  (*r),
-                    IRInstructionModifier::Memory   (a) => self.memget16 (*a)?,
+                    IRInstructionModifier::Memory   (a) => self.memget32 (*a)?,
                     _ => return Err(error!("INVALID ALU3 ARGUMENT {:?}", m.1)),
                 },
             None =>
             {
-                self.stack_pop16()?
+                self.stack_pop32()?
             },
         };
 
@@ -416,12 +585,12 @@ impl VM
             Some(m) => match &m.0
                 {
                     IRInstructionModifier::Register (r) => self.get_reg  (*r),
-                    IRInstructionModifier::Memory   (a) => self.memget16 (*a)?,
+                    IRInstructionModifier::Memory   (a) => self.memget32 (*a)?,
                     _ => return Err(error!("INVALID ALU3 ARGUMENT {:?}", m.0)),
                 },
             None =>
             {
-                self.stack_pop16()?
+                self.stack_pop32()?
             },
         };
 
@@ -430,13 +599,13 @@ impl VM
             _IRALUInstruction3:: ADD(_) => l.overflowing_add(r).0,
             _IRALUInstruction3:: SUB(_) => l.overflowing_sub(r).0,
             _IRALUInstruction3:: MUL(_) => l.overflowing_mul(r).0,
-            _IRALUInstruction3:: DIV(_) => match l.checked_div(r) { Some(s) => s, None => 0 },
+            _IRALUInstruction3:: DIV(_) => l.checked_div(r).unwrap_or(0),
             _IRALUInstruction3:: MOD(_) => if(r == 0) { 0 } else { l % r },
             _IRALUInstruction3:: AND(_) => l & r,
             _IRALUInstruction3::  OR(_) => l | r,
             _IRALUInstruction3:: XOR(_) => l ^ r,
-            _IRALUInstruction3:: SHL(_) => l.overflowing_shl(r.into()).0,
-            _IRALUInstruction3:: SHR(_) => l.overflowing_shr(r.into()).0,
+            _IRALUInstruction3:: SHL(_) => l.overflowing_shl(r).0,
+            _IRALUInstruction3:: SHR(_) => l.overflowing_shr(r).0,
             _IRALUInstruction3::NAND(_) => !(l & r),
             _IRALUInstruction3:: NOR(_) => !(l | r),
         };
@@ -446,12 +615,12 @@ impl VM
             Some(m) => match &m.2
                 {
                     IRInstructionModifier::Register (r) => self.set_reg  (v, *r),
-                    IRInstructionModifier::Memory   (a) => self.memset16 (*a, v)?,
+                    IRInstructionModifier::Memory   (a) => self.memset32 (*a, v)?,
                     _ => return Err(error!("INVALID ALU3 ARGUMENT {:?}", m.2)),
                 },
             None =>
             {
-                self.stack_push16(v)?
+                self.stack_push32(v)?
             },
         };
 
@@ -479,6 +648,13 @@ impl VM
             IRInstruction::POPFLG => self.flags = self.stack_pop()?,
             IRInstruction::INT(i) => self.send_interrupt((i as u8).try_into()?)?,
 
+            IRInstruction::LEA(r) =>
+            {
+                let v = self.get_reg(r);
+                let v = self.mem_map(v);
+                self.set_reg(v, r);
+            },
+
             IRInstruction::INC(r) =>
             {
                 let v = self.get_reg(r);
@@ -494,6 +670,14 @@ impl VM
 
             IRInstruction::DBG => 
             {
+                let mut msg = String::new();
+                loop
+                {
+                    let b = self.fetch_byte()?;
+                    if(b == 0) { break; }
+                    msg.push(b as char);
+                }
+                print!("{msg}");
                 if(false)
                 {
                     let ptr = self.get_reg(IRRegister::RA);
@@ -510,18 +694,18 @@ impl VM
                     {
                         print!("{:#x}  ", self.memget16(self.stack_position + i*2)?);
                     }
-                    println!("");
+                    println!();
                 }
                 else
                 {
-                    //println!("Register dump:");
+                    println!("Register dump:");
                     for r in self.registers
                     {
                         print!("{:#06x} ", r);
                     }
                     print!("{:#06x} ", self.instruction_pointer);
                     print!("{:#06x} ", self.      stack_pointer);
-                    println!("");
+                    println!();
                 }
             }, 
             
@@ -534,11 +718,10 @@ impl VM
                     let c = self.get_reg(r) as u8 as char;
 
                     print!("{c}");
-                    match stdout().flush()
+                    if let Err(e) = stdout().flush()
                     {
-                        Err(e) => return Err(Error::IO(e)),
-                        _ => {}
-                    };
+                        return Err(Error::IO(e));
+                    }
 
                 }
 
@@ -558,39 +741,31 @@ impl VM
 
                     let c = loop 
                     {
-                        match event::read().unwrap()
+                        if let Event::Key(k) = event::read().unwrap()
                         {
-                            Event::Key(k) =>
+                            let ctrl = matches!(k.modifiers, KeyModifiers::CONTROL);
+                            match k.code
                             {
-                                let ctrl = match k.modifiers
+                                KeyCode::Enter => break '\n',
+                                KeyCode::Backspace => break '\x08',
+                                KeyCode::Char('c') =>
                                 {
-                                    KeyModifiers::CONTROL => true,
-                                    _ => false,
-                                };
-                                match k.code
+                                    if(ctrl)
+                                    {
+                                        self.running = false;
+                                        return Ok(());
+                                    }
+                                },
+                                KeyCode::Esc =>
                                 {
-                                    KeyCode::Enter => break '\n',
-                                    KeyCode::Backspace => break '\x08',
-                                    KeyCode::Char('c') =>
-                                    {
-                                        if(ctrl)
-                                        {
-                                            self.running = false;
-                                            return Ok(());
-                                        }
-                                    },
-                                    KeyCode::Esc =>
-                                    {
-                                        //self.running = false;
-                                        //return Ok(());
-                                    },
-                                    _ => {},
-                                }
-                                let Some(c) = k.code.as_char()
-                                else { continue; };
-                                break c;
+                                    //self.running = false;
+                                    //return Ok(());
+                                },
+                                _ => {},
                             }
-                            _ => {}
+                            let Some(c) = k.code.as_char()
+                            else { continue; };
+                            break c;
                         }
                     } as u8;
 
@@ -601,7 +776,7 @@ impl VM
 
                     disable_raw_mode().unwrap();
 
-                    self.set_reg(c as u16, r);
+                    self.set_reg(c as u32, r);
 
                 }
 
@@ -618,8 +793,9 @@ impl VM
                     {
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memget16(a)?,
-                            IRInstructionWidth::B8  => self.memget(a)? as u16,
+                            IRInstructionWidth::B32 => self.memget32 (a)?,
+                            IRInstructionWidth::B16 => self.memget16 (a)? as u32,
+                            IRInstructionWidth::B8  => self.memget   (a)? as u32,
                         }
                     },
                     IRInstructionModifier::RegisterAddress(r) => 
@@ -627,21 +803,24 @@ impl VM
                         let v = self.get_reg(r);
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memget16(v)?,
-                            IRInstructionWidth::B8  => self.memget(v)? as u16,
+                            IRInstructionWidth::B32 => self.memget32 (v)?,
+                            IRInstructionWidth::B16 => self.memget16 (v)? as u32,
+                            IRInstructionWidth::B8  => self.memget   (v)? as u32,
                         }
                     },
                     IRInstructionModifier::MemoryAddress(a) =>
                     {
                         let v = match w 
                         {
-                            IRInstructionWidth::B16 => self.memget16(a)?,
-                            IRInstructionWidth::B8  => self.memget(a)? as u16,
+                            IRInstructionWidth::B32 => self.memget32 (a)?,
+                            IRInstructionWidth::B16 => self.memget16 (a)? as u32,
+                            IRInstructionWidth::B8  => self.memget   (a)? as u32,
                         };
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memget16(v)?,
-                            IRInstructionWidth::B8  => self.memget(v)? as u16,
+                            IRInstructionWidth::B32 => self.memget32 (v)?,
+                            IRInstructionWidth::B16 => self.memget16 (v)? as u32,
+                            IRInstructionWidth::B8  => self.memget   (v)? as u32,
                         }
                     },
                     IRInstructionModifier::Immediate(i) => i,
@@ -655,8 +834,9 @@ impl VM
                     {
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memset16(a, value)?,
-                            IRInstructionWidth::B8  => self.memset(a, (value & 0xFF) as u8)?,
+                            IRInstructionWidth::B32 => self.memset32 (a, (value         )       )?,
+                            IRInstructionWidth::B16 => self.memset16 (a, (value & 0xFFFF) as u16)?,
+                            IRInstructionWidth::B8  => self.memset   (a, (value & 0x00FF) as u8 )?,
                         }
                     },
                     IRInstructionModifier::RegisterAddress(r) => 
@@ -664,21 +844,24 @@ impl VM
                         let v = self.get_reg(r);
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memset16(v, value)?,
-                            IRInstructionWidth::B8  => self.memset(v, (value & 0xFF) as u8)?,
+                            IRInstructionWidth::B32 => self.memset32 (v, (value         )       )?,
+                            IRInstructionWidth::B16 => self.memset16 (v, (value & 0xFFFF) as u16)?,
+                            IRInstructionWidth::B8  => self.memset   (v, (value & 0x00FF) as u8 )?,
                         }
                     },
                     IRInstructionModifier::MemoryAddress(a) =>
                     {
                         let v = match w 
                         {
-                            IRInstructionWidth::B16 => self.memget16(a)?,
-                            IRInstructionWidth::B8  => self.memget(a)? as u16,
+                            IRInstructionWidth::B32 => self.memget32 (a)?,
+                            IRInstructionWidth::B16 => self.memget16 (a)? as u32,
+                            IRInstructionWidth::B8  => self.memget   (a)? as u32,
                         };
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memset16(v, value)?,
-                            IRInstructionWidth::B8  => self.memset(v, (value & 0xFF) as u8)?,
+                            IRInstructionWidth::B32 => self.memset32 (v, (value         )       )?,
+                            IRInstructionWidth::B16 => self.memset16 (v, (value & 0xFFFF) as u16)?,
+                            IRInstructionWidth::B8  => self.memset   (v, (value & 0x00FF) as u8 )?,
                         }
                     },
                     _ => return Err(error!("INVALID MOV ARGUMENT {:?}", m.1)),
@@ -696,8 +879,9 @@ impl VM
                     {
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memget16(a)?,
-                            IRInstructionWidth::B8  => self.memget(a)? as u16,
+                            IRInstructionWidth::B32 => self.memget32 (a)?,
+                            IRInstructionWidth::B16 => self.memget16 (a)? as u32,
+                            IRInstructionWidth::B8  => self.memget   (a)? as u32,
                         }
                     },
                     IRInstructionModifier::Immediate(i) => i,
@@ -706,18 +890,20 @@ impl VM
                 
                 match w 
                 {
-                    IRInstructionWidth::B16 => self.stack_push16(value)?,
-                    IRInstructionWidth::B8  => self.stack_push((value & 0xFF) as u8)?,
+                    IRInstructionWidth::B32 => self.stack_push32 ((value         ) as u32)?,
+                    IRInstructionWidth::B16 => self.stack_push16 ((value & 0xFFFF) as u16)?,
+                    IRInstructionWidth::B8  => self.stack_push   ((value & 0x00FF) as u8 )?,
                 }
 
             },
             IRInstruction::POP(w, m) =>
             {
                 
-                let value: u16 = match w
+                let value = match w
                 {
-                    IRInstructionWidth::B16 => self.stack_pop16()?,
-                    IRInstructionWidth::B8  => self.stack_pop  ()? as u16,
+                    IRInstructionWidth::B32 => self.stack_pop32 ()?,
+                    IRInstructionWidth::B16 => self.stack_pop16 ()? as u32,
+                    IRInstructionWidth::B8  => self.stack_pop   ()? as u32,
                 };
 
                 match m
@@ -727,8 +913,9 @@ impl VM
                     {
                         match w 
                         {
-                            IRInstructionWidth::B16 => self.memset16(a, value)?,
-                            IRInstructionWidth::B8  => self.memset(a, (value & 0xFF) as u8)?,
+                            IRInstructionWidth::B32 => self.memset32 (a,  value                 )?,
+                            IRInstructionWidth::B16 => self.memset16 (a, (value & 0xFFFF) as u16)?,
+                            IRInstructionWidth::B8  => self.memset   (a, (value & 0x00FF) as u8 )?,
                         }
                     },
                     _ => return Err(error!("INVALID POP ARGUMENT {:?}", m)),
@@ -741,7 +928,7 @@ impl VM
                 self.instruction_pointer = self.mem_map(match m
                 {
                     IRInstructionModifier::Register(r) => self.get_reg(r),
-                    IRInstructionModifier::Memory(a) => self.memget16(a)?,
+                    IRInstructionModifier::Memory(a) => self.memget32_safe(a)?,
                     IRInstructionModifier::Immediate(i) => i,
                     _ => return Err(error!("INVALID JMP ARGUMENT {:?}", m)),
                 });
@@ -753,7 +940,7 @@ impl VM
                     self.instruction_pointer = self.mem_map(match m
                     {
                         IRInstructionModifier::Register(r) => self.get_reg(r),
-                        IRInstructionModifier::Memory(a) => self.memget16(a)?,
+                        IRInstructionModifier::Memory(a) => self.memget32_safe(a)?,
                         IRInstructionModifier::Immediate(i) => i,
                         _ => return Err(error!("INVALID JIF ARGUMENT {:?}", m)),
                     });
@@ -761,16 +948,16 @@ impl VM
             },
             IRInstruction::CAL(m) =>
             {
-                self.stack_push16(self.instruction_pointer)?;
+                self.stack_push32(self.instruction_pointer)?;
                 self.instruction_pointer = self.mem_map(match m
                 {
                     IRInstructionModifier::Register(r) => self.get_reg(r),
-                    IRInstructionModifier::Memory(a) => self.memget16(a)?,
+                    IRInstructionModifier::Memory(a)   => self.memget32_safe(a)?,
                     IRInstructionModifier::Immediate(i) => i,
                     _ => return Err(error!("INVALID CAL ARGUMENT {:?}", m)),
                 });
             },
-            IRInstruction::RET => self.instruction_pointer = self.stack_pop16()?,
+            IRInstruction::RET => self.instruction_pointer = self.stack_pop32()?,
 
             IRInstruction::ALU(ins) => self.execute_alu_instruction(ins)?,
         };
@@ -782,9 +969,11 @@ impl VM
     fn execute_next_instruction(&mut self) -> Result<(), Error>
     {
 
+        if(self.debug_print) { print!("[{:#010x}]", self.instruction_pointer); }
+
         let ins = bytes_to_ins(|| self.fetch_byte())?;
 
-        if(self.debug_print) { println!("Executing {:?}", ins); }
+        if(self.debug_print) { println!(" Executing {:?}", ins); }
 
         self.execute_instruction(ins)
 
@@ -806,7 +995,7 @@ impl VM
 
 
 
-    pub fn load(&mut self, data: Vec<u8>, pos: u16) -> Result<(), Error>
+    pub fn load(&mut self, data: Vec<u8>, pos: u32) -> Result<(), Error>
     {
 
         if(self.section_mode)
@@ -828,8 +1017,8 @@ impl VM
                 return Err(error!("Loading {} into ram at pos {:#x} overflows ram!", data.len(), pos));
             }
 
-            for i in 0..data.len()
-            { self.memset(pos + (i as u16), data[i])?; }
+            for (i, item) in data.iter().enumerate()
+            { self.memset(pos + (i as u32), *item)?; }
 
         }
 
@@ -897,7 +1086,7 @@ impl VM
 
 
 
-    fn _io_execute_instruction(&mut self, ins: u16) -> Result<(), Error>
+    fn _io_execute_instruction(&mut self, ins: u32) -> Result<(), Error>
     {
         
         if(ins >= 0xF0)
@@ -907,9 +1096,10 @@ impl VM
 
                 0xF0 =>
                 {
-                    self.io_device = self.get_reg(IRRegister::RA);
+                    self.io_device = self.get_reg(IRRegister::RA) as u16;
                     Ok(())
                 },
+                0xF1 => self._io_execute_instruction_rl( self.get_reg(IRRegister::RA) ),
                 
                 _ => unreachable!(),
 
@@ -927,322 +1117,321 @@ impl VM
         }
 
     }
-    fn _io_execute_instruction_fs(&mut self, ins: u16) -> Result<(), Error>
+    fn _io_execute_instruction_fs(&mut self, ins: u32) -> Result<(), Error>
     {
 
-        Ok(
-            match ins
+        match ins
+        {
+
+            0x00 => // Reindex()
             {
+                self.fs.Reindex()?;
+            },
+            0x01 => // GetFiles()
+            {
+                self.set_reg(self.fs.GetFiles()? as u32, IRRegister::RA);
+            },
+            0x02 => // CreateFile()
+            {
+                
+                let mut name_ptr = self.get_reg(IRRegister::RA);
+                let mut name = String::new();
 
-                0x00 => // Reindex()
+                loop
                 {
-                    self.fs.Reindex()?;
-                },
-                0x01 => // GetFiles()
-                {
-                    self.set_reg(self.fs.GetFiles()? as u16, IRRegister::RA);
-                },
-                0x02 => // CreateFile()
-                {
-                    
-                    let mut name_ptr = self.get_reg(IRRegister::RA);
-                    let mut name = String::new();
-
-                    loop
+                    let c = self.memget(name_ptr)?;
+                    name_ptr += 1;
+                    if(c == 0)
                     {
-                        let c = self.memget(name_ptr)?;
-                        name_ptr += 1;
-                        if(c == 0)
-                        {
-                            break;
-                        }
-                        name.push(c as char);
+                        break;
                     }
-
-                    let result:u16 = self.fs.CreateFile(name)? as u16;
-                    self.set_reg(result, IRRegister::RB);
-
-                },
-                0x03 => // DeleteFile()
-                {
-                    let index = self.get_reg(IRRegister::RA) as u8;
-                    let result:u16 = self.fs.DeleteFile(index)? as u16;
-                    self.set_reg(result, IRRegister::RB);
-                },
-                0x04 => // FileExists()
-                {
-                    
-                    let mut name_ptr = self.get_reg(IRRegister::RA);
-                    let mut name = String::new();
-
-                    loop
-                    {
-                        let c = self.memget(name_ptr)?;
-                        name_ptr += 1;
-                        if(c == 0)
-                        {
-                            break;
-                        }
-                        name.push(c as char);
-                    }
-
-                    let result:u16 = self.fs.FileExists(name)? as u16;
-                    self.set_reg(result, IRRegister::RB);
-
-                }
-                0x05 => // GetSupDir()
-                {
-                    
-                    let mut name_ptr = self.get_reg(IRRegister::RA);
-                    let mut name = String::new();
-                    
-                    let dts_ptr = self.get_reg(IRRegister::RB);
-
-                    loop
-                    {
-                        let c = self.memget(name_ptr)?;
-                        name_ptr += 1;
-                        if(c == 0)
-                        {
-                            break;
-                        }
-                        name.push(c as char);
-                    }
-
-                    let (result, path) = self.fs.GetSupDir(name)?;
-                    self.set_reg(result as u16, IRRegister::RC);
-
-                    if let Some(path) = path
-                    {
-                        let mut ptr = dts_ptr;
-                        for c in path.chars()
-                        {
-                            self.memset(ptr, c as u8)?;
-                            ptr += 1;
-                        }
-                    }
-
-                }
-                0x0E => // QuickRead()
-                {
-                    
-                    let mut name_ptr = self.get_reg(IRRegister::RA);
-                    let mut name = String::new();
-                    
-                    let dts_ptr = self.get_reg(IRRegister::RB);
-
-                    loop
-                    {
-                        let c = self.memget(name_ptr)?;
-                        name_ptr += 1;
-                        if(c == 0)
-                        {
-                            break;
-                        }
-                        name.push(c as char);
-                    }
-
-                    let (result, bytes) = self.fs.QuickRead(name)?;
-                    self.set_reg(result as u16, IRRegister::RD);
-
-                    if let Some(bytes) = bytes
-                    {
-                        self.set_reg(bytes.len() as u16, IRRegister::RC);
-                        let mut ptr = dts_ptr;
-                        for b in bytes
-                        {
-                            self.memset(ptr, b)?;
-                            ptr += 1;
-                        }
-                    }
-
-                }
-                0x0F => // SetRoot()
-                {
-                    
-                    let mut path_ptr = self.get_reg(IRRegister::RA);
-                    let mut path = String::new();
-
-                    loop
-                    {
-                        let c = self.memget(path_ptr)?;
-                        path_ptr += 1;
-                        if(c == 0)
-                        {
-                            break;
-                        }
-                        path.push(c as char);
-                    }
-
-                    let result = self.fs.SetRoot(path)?;
-                    self.set_reg(result as u16, IRRegister::RB);
-
+                    name.push(c as char);
                 }
 
+                let result = self.fs.CreateFile(name)? as u32;
+                self.set_reg(result, IRRegister::RB);
 
+            },
+            0x03 => // DeleteFile()
+            {
+                let index = self.get_reg(IRRegister::RA) as u8;
+                let result = self.fs.DeleteFile(index)? as u32;
+                self.set_reg(result, IRRegister::RB);
+            },
+            0x04 => // FileExists()
+            {
+                
+                let mut name_ptr = self.get_reg(IRRegister::RA);
+                let mut name = String::new();
 
-                0x10 => // GetFileName()
+                loop
                 {
-
-                    let index = self.get_reg(IRRegister::RA) as u8;
-                    let ptr   = self.get_reg(IRRegister::RB);
-
-                    let (result, name) = self.fs.GetFileName(index)?;
-                    self.set_reg(result as u16, IRRegister::RD);
-
-                    if let Some(name) = name
+                    let c = self.memget(name_ptr)?;
+                    name_ptr += 1;
+                    if(c == 0)
                     {
-
-                        let mut i: u16 = 0;
-
-                        for c in name.chars()
-                        {
-                            self.memset(i + ptr, c as u8)?;
-                            i += 1;
-                        }
-
-                        // i == length of the string
-                        self.set_reg(i, IRRegister::RC);
-
+                        break;
                     }
-
-                },
-                0x11 => // SetFileName()
-                {
-
-                    let index = self.get_reg(IRRegister::RA) as u8;
-
-                    let mut name_ptr = self.get_reg(IRRegister::RB);
-                    let mut name = String::new();
-
-                    loop
-                    {
-                        let c = self.memget(name_ptr)?;
-                        name_ptr += 1;
-                        if(c == 0)
-                        {
-                            break;
-                        }
-                        name.push(c as char);
-                    }
-
-                    let result = self.fs.SetFileName(index, name)?;
-                    self.set_reg(result as u16, IRRegister::RC);
-
-                },
-                0x12 => // GetFileLength()
-                {
-                    
-                    let index = self.get_reg(IRRegister::RA) as u8;
-
-                    let (result, length) = self.fs.GetFileLength(index)?;
-                    self.set_reg(result as u16, IRRegister::RC);
-
-                    if let Some(length) = length
-                    {
-                        self.set_reg(length, IRRegister::RB);
-                    }
-
-                },
-                0x13 => // SetFileLength()
-                {
-                    
-                    let index  = self.get_reg(IRRegister::RA) as u8;
-                    let length = self.get_reg(IRRegister::RB);
-
-                    let result = self.fs.SetFileLength(index, length)?;
-                    self.set_reg(result as u16, IRRegister::RC);
-
-                },
-
-
-
-                0x20 => // ReadFile()
-                {
-
-                    let index = self.get_reg(IRRegister::RA) as u8;
-                    let ptr   = self.get_reg(IRRegister::RB);
-
-                    let (result, buffer) = self.fs.ReadFile(index)?;
-                    self.set_reg(result as u16, IRRegister::RC);
-
-                    let mut i: u16 = 0;
-
-                    if let Some(buffer) = buffer
-                    {
-
-                        for b in buffer
-                        {
-                            self.memset(i + ptr, b)?;
-                            i += 1;
-                        }
-
-                    }
-
-                    self.set_reg(i, IRRegister::RD);
-
-                },
-                0x21 => // ReadFileAt()
-                {
-
-                    let index = self.get_reg(IRRegister::RA) as u8;
-                    let ptr   = self.get_reg(IRRegister::RB);
-                    let pos   = self.get_reg(IRRegister::RC);
-
-                    let (result, val) = self.fs.ReadFileAt(index, pos)?;
-                    self.set_reg(result as u16, IRRegister::RD);
-
-                    if let Some(val) = val
-                    {
-                        self.memset(ptr, val)?;
-                    }
-
+                    name.push(c as char);
                 }
-                0x22 => // WrtieFile()
+
+                let result = self.fs.FileExists(name)? as u32;
+                self.set_reg(result, IRRegister::RB);
+
+            }
+            0x05 => // GetSupDir()
+            {
+                
+                let mut name_ptr = self.get_reg(IRRegister::RA);
+                let mut name = String::new();
+                
+                let dts_ptr = self.get_reg(IRRegister::RB);
+
+                loop
                 {
-
-                    let index = self.get_reg(IRRegister::RA) as u8;
-                    let len   = self.get_reg(IRRegister::RB);
-                    let ptr   = self.get_reg(IRRegister::RC);
-
-                    let mut buffer: Vec<u8> = Vec::new();
-                    
-                    for i in 0..len
+                    let c = self.memget(name_ptr)?;
+                    name_ptr += 1;
+                    if(c == 0)
                     {
-                        buffer.push(self.memget(i + ptr)?);
+                        break;
                     }
+                    name.push(c as char);
+                }
 
-                    let result = self.fs.WriteFile(index, buffer)?;
-                    self.set_reg(result as u16, IRRegister::RD);
+                let (result, path) = self.fs.GetSupDir(name)?;
+                self.set_reg(result as u32, IRRegister::RC);
 
-                },
-                0x23 => // WrtieFileAt()
+                if let Some(path) = path
                 {
-
-                    let index = self.get_reg(IRRegister::RA) as u8;
-                    let ptr   = self.get_reg(IRRegister::RB);
-                    let pos   = self.get_reg(IRRegister::RC);
-
-                    let val = self.memget(ptr)?;
-
-                    let result = self.fs.WriteFileAt(index, pos, val)?;
-                    self.set_reg(result as u16, IRRegister::RD);
-
-                },
-
-
-
-                _ =>
-                {
-                    return Err(error!("FileSystem[TM]: {:#x} is not a fs function!", ins));
+                    let mut ptr = dts_ptr;
+                    for c in path.chars()
+                    {
+                        self.memset(ptr, c as u8)?;
+                        ptr += 1;
+                    }
                 }
 
             }
-            
-        )
+            0x0E => // QuickRead()
+            {
+                
+                let mut name_ptr = self.get_reg(IRRegister::RA);
+                let mut name = String::new();
+                
+                let dts_ptr = self.get_reg(IRRegister::RB);
+
+                loop
+                {
+                    let c = self.memget(name_ptr)?;
+                    name_ptr += 1;
+                    if(c == 0)
+                    {
+                        break;
+                    }
+                    name.push(c as char);
+                }
+
+                let (result, bytes) = self.fs.QuickRead(name)?;
+                self.set_reg(result as u32, IRRegister::RD);
+
+                if let Some(bytes) = bytes
+                {
+                    self.set_reg(bytes.len() as u32, IRRegister::RC);
+                    let mut ptr = dts_ptr;
+                    for b in bytes
+                    {
+                        self.memset(ptr, b)?;
+                        ptr += 1;
+                    }
+                }
+
+            }
+            0x0F => // SetRoot()
+            {
+                
+                let mut path_ptr = self.get_reg(IRRegister::RA);
+                let mut path = String::new();
+
+                loop
+                {
+                    let c = self.memget(path_ptr)?;
+                    path_ptr += 1;
+                    if(c == 0)
+                    {
+                        break;
+                    }
+                    path.push(c as char);
+                }
+
+                let result = self.fs.SetRoot(path)?;
+                self.set_reg(result as u32, IRRegister::RB);
+
+            }
+
+
+
+            0x10 => // GetFileName()
+            {
+
+                let index = self.get_reg(IRRegister::RA) as u8;
+                let ptr   = self.get_reg(IRRegister::RB);
+
+                let (result, name) = self.fs.GetFileName(index)?;
+                self.set_reg(result as u32, IRRegister::RD);
+
+                if let Some(name) = name
+                {
+
+                    let mut i: u32 = 0;
+
+                    for c in name.chars()
+                    {
+                        self.memset(i + ptr, c as u8)?;
+                        i += 1;
+                    }
+
+                    // i == length of the string
+                    self.set_reg(i, IRRegister::RC);
+
+                }
+
+            },
+            0x11 => // SetFileName()
+            {
+
+                let index = self.get_reg(IRRegister::RA) as u8;
+
+                let mut name_ptr = self.get_reg(IRRegister::RB);
+                let mut name = String::new();
+
+                loop
+                {
+                    let c = self.memget(name_ptr)?;
+                    name_ptr += 1;
+                    if(c == 0)
+                    {
+                        break;
+                    }
+                    name.push(c as char);
+                }
+
+                let result = self.fs.SetFileName(index, name)?;
+                self.set_reg(result as u32, IRRegister::RC);
+
+            },
+            0x12 => // GetFileLength()
+            {
+                
+                let index = self.get_reg(IRRegister::RA) as u8;
+
+                let (result, length) = self.fs.GetFileLength(index)?;
+                self.set_reg(result as u32, IRRegister::RC);
+
+                if let Some(length) = length
+                {
+                    self.set_reg(length, IRRegister::RB);
+                }
+
+            },
+            0x13 => // SetFileLength()
+            {
+                
+                let index  = self.get_reg(IRRegister::RA) as u8;
+                let length = self.get_reg(IRRegister::RB);
+
+                let result = self.fs.SetFileLength(index, length)?;
+                self.set_reg(result as u32, IRRegister::RC);
+
+            },
+
+
+
+            0x20 => // ReadFile()
+            {
+
+                let index = self.get_reg(IRRegister::RA) as u8;
+                let ptr   = self.get_reg(IRRegister::RB);
+
+                let (result, buffer) = self.fs.ReadFile(index)?;
+                self.set_reg(result as u32, IRRegister::RC);
+
+                let mut i: u32 = 0;
+
+                if let Some(buffer) = buffer
+                {
+
+                    for b in buffer
+                    {
+                        self.memset(i + ptr, b)?;
+                        i += 1;
+                    }
+
+                }
+
+                self.set_reg(i, IRRegister::RD);
+
+            },
+            0x21 => // ReadFileAt()
+            {
+
+                let index = self.get_reg(IRRegister::RA) as u8;
+                let ptr   = self.get_reg(IRRegister::RB);
+                let pos   = self.get_reg(IRRegister::RC);
+
+                let (result, val) = self.fs.ReadFileAt(index, pos)?;
+                self.set_reg(result as u32, IRRegister::RD);
+
+                if let Some(val) = val
+                {
+                    self.memset(ptr, val)?;
+                }
+
+            }
+            0x22 => // WrtieFile()
+            {
+
+                let index = self.get_reg(IRRegister::RA) as u8;
+                let len   = self.get_reg(IRRegister::RB);
+                let ptr   = self.get_reg(IRRegister::RC);
+
+                let mut buffer: Vec<u8> = Vec::new();
+                
+                for i in 0..len
+                {
+                    buffer.push(self.memget(i + ptr)?);
+                }
+
+                let result = self.fs.WriteFile(index, buffer)?;
+                self.set_reg(result as u32, IRRegister::RD);
+
+            },
+            0x23 => // WrtieFileAt()
+            {
+
+                let index = self.get_reg(IRRegister::RA) as u8;
+                let ptr   = self.get_reg(IRRegister::RB);
+                let pos   = self.get_reg(IRRegister::RC);
+
+                let val = self.memget(ptr)?;
+
+                let result = self.fs.WriteFileAt(index, pos, val)?;
+                self.set_reg(result as u32, IRRegister::RD);
+
+            },
+
+
+
+            _ =>
+            {
+                return Err(error!("FileSystem[TM]: {:#x} is not a fs function!", ins));
+            }
+
+        }
     
+        Ok(())
+
     }
-    fn _io_execute_instruction_ih(&mut self, ins: u16) -> Result<(), Error>
+    fn _io_execute_instruction_ih(&mut self, ins: u32) -> Result<(), Error>
     {
 
         match ins
@@ -1259,7 +1448,7 @@ impl VM
                     {
                         InterruptID::None
                     };
-                self.set_reg(id as u8 as u16, IRRegister::RA);
+                self.set_reg(id as u8 as u32, IRRegister::RA);
             },
             0x01 => // SetUserMode()
             {
@@ -1291,7 +1480,13 @@ impl VM
             0x05 => // SetUserMode()
             {
                 self.sub_mode = true;
-            },            
+            },     
+            0x06 => // ResolveInterruptNoRSP()
+            {
+                let rsp = self.stack_pointer;
+                self.resolve_interrupt()?;
+                self.stack_pointer = rsp;
+            },       
             _ => unreachable!("{ins}"),
 
         }
@@ -1299,7 +1494,7 @@ impl VM
         Ok(())
 
     }
-    fn _io_execute_instruction_mm(&mut self, ins: u16) -> Result<(), Error>
+    fn _io_execute_instruction_mm(&mut self, ins: u32) -> Result<(), Error>
     {
         
         match ins
@@ -1320,7 +1515,7 @@ impl VM
                 let len = self.get_reg(IRRegister::RB);
                 let dst = self.get_reg(IRRegister::RC);
 
-                let ID = self.memory_maps.len() as u16 + 1;
+                let ID = self.memory_maps.len() as u32 + 1;
 
                 self.memory_maps.push(MemoryMap::from(ID, adr, len, dst));
 
@@ -1350,8 +1545,149 @@ impl VM
         Ok(())
 
     }
+    fn _io_execute_instruction_rl(&mut self, ins: u32) -> Result<(), Error>
+    {
+        
+        match ins
+        {
 
+            0x00 => // WindowShouldClose()
+            {
+                let b = self.ray.WindowShouldClose()?;
+                self.stack_push(b)?;
+            },
+            0x01 => // BeginDrawing()
+            {
+                self.ray.BeginDrawing()?;
+            },
+            0x02 => // EndDrawing()
+            {
+                self.ray.EndDrawing()?;
+            },
+            
+            0x03 => // DrawRectangle()
+            {
 
+                let ca = self.stack_pop()?;
+                let cb = self.stack_pop()?;
+                let cg = self.stack_pop()?;
+                let cr = self.stack_pop()?;
+
+                let color = RAY::rgba(cr, cg, cb, ca);
+
+                let h = self.stack_pop32()?;
+                let w = self.stack_pop32()?;
+                let y = self.stack_pop32()?;
+                let x = self.stack_pop32()?;
+
+                self.ray.DrawRectange(x, y, w, h, color)?;
+                
+            },
+            0x04 => // DrawFPS()
+            {
+                let y = self.stack_pop32()?;
+                let x = self.stack_pop32()?;
+                self.ray.DrawFPS(x, y)?;
+            },
+            0x05 => // ClearBackground()
+            {
+
+                let ca = self.stack_pop()?;
+                let cb = self.stack_pop()?;
+                let cg = self.stack_pop()?;
+                let cr = self.stack_pop()?;
+
+                let color = RAY::rgba(cr, cg, cb, ca);
+
+                self.ray.ClearBackground(color)?;
+                
+            },
+            0x06 => // DrawText()
+            {
+                let mut ptr = self.stack_pop32()?;
+                let mut text = String::new();
+
+                loop
+                {
+                    let c = self.memget(ptr)?;
+                    if(c == 0)
+                    {
+                        break;
+                    }
+                    ptr += 1;
+                    text.push(c as char);
+                }
+
+                let ca = self.stack_pop()?;
+                let cb = self.stack_pop()?;
+                let cg = self.stack_pop()?;
+                let cr = self.stack_pop()?;
+
+                let color = RAY::rgba(cr, cg, cb, ca);
+
+                let s = self.stack_pop32()?;
+                let y = self.stack_pop32()?;
+                let x = self.stack_pop32()?;
+
+                self.ray.DrawText(x, y, s, color, text)?;
+                
+            },
+
+            0xED => // SetTargetFPS()
+            {
+                let fps = self.stack_pop32()?;
+                self.ray.SetTargetFPS(fps)?;
+            },
+            0xEE => // CloseWindow()
+            {
+                self.ray.CloseWindow()?;
+            },
+            0xEF => // OpenWindow()
+            {
+                
+                let r = self.stack_pop()?;
+                let mut ptr = self.stack_pop32()?;
+                let mut title = String::new();
+
+                loop
+                {
+                    let c = self.memget(ptr)?;
+                    ptr += 1;
+                    if(c == 0)
+                    {
+                        break;
+                    }
+                    title.push(c as char);
+                }
+                
+                let h = self.stack_pop32()?;
+                let w = self.stack_pop32()?;
+
+                self.ray.OpenWindow(w, h, title, r != 0)?;
+
+            },
+
+            0xD0 => // IsWindowResized()
+            {
+                self.stack_push(self.ray.IsWindowResized()?)?;
+            },
+            0xD1 => // GetWindowWidth()
+            {
+                self.stack_push32(self.ray.GetWindowWidth()?)?;
+            },
+            0xD2 => // GetWindowHeight()
+            {
+                self.stack_push32(self.ray.GetWindowHeight()?)?;
+            },
+            
+            _ => unreachable!(),
+
+        }
+
+        Ok(())
+
+    }
+    
 
     fn validate_kernel_mode(&mut self, sub_mode_valid: bool) -> Result<bool, Error>
     {

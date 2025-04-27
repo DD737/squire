@@ -14,7 +14,7 @@ pub struct DASM
     last: Option<u8>,
     position: usize,
     end_of_file: bool,
-    labels: HashMap<u16, String>,
+    labels: HashMap<u32, String>,
 }
 impl DASM
 {
@@ -63,8 +63,9 @@ impl DASM
         self.last.take()
     }
 
-    fn get_label_for(&mut self, adr: u16) -> &String
+    fn get_label_for(&mut self, adr: u32) -> &String
     {
+        #[allow(clippy::map_entry)]
         if(self.labels.contains_key(&adr))
         {
             self.labels.get(&adr).unwrap()
@@ -112,7 +113,8 @@ impl DASM
     {
         match w
         {
-            IRInstructionWidth::B16 => String::new(),
+            IRInstructionWidth::B32 => "d".to_string(),
+            IRInstructionWidth::B16 => "w".to_string(),
             IRInstructionWidth::B8  => "b".to_string(),
         }
     }
@@ -151,7 +153,7 @@ impl DASM
             _IRALUInstruction2::CMP(m) =>
             {
                 let m = self.parse_mod2(m, true);
-                format!("not{} {}, {}", m.0, m.1, m.2)
+                format!("cmp{} {}, {}", m.0, m.1, m.2)
             },
         }
     }
@@ -195,7 +197,7 @@ impl DASM
             IRALUInstruction::Complex (i) => self._parse_alu3(i),
         }
     }
-    fn ir_to_line(&mut self, ir: IRInstruction, loc: u16) -> String
+    fn ir_to_line(&mut self, ir: IRInstruction, loc: u32) -> String
     {
         let ins = match ir
         {
@@ -206,6 +208,7 @@ impl DASM
             IRInstruction::DBG => "dbg".to_string(),
             IRInstruction::SER_OUT(r) => format!("__out {}", DASM::reg_to_str(r)),
             IRInstruction::SER_IN (r) => format!("__in {}", DASM::reg_to_str(r)),
+            IRInstruction::LEA(r) => format!("lea {}", DASM::reg_to_str(r)),
             IRInstruction::INC(r) => format!("inc {}", DASM::reg_to_str(r)),
             IRInstruction::DEC(r) => format!("dec {}", DASM::reg_to_str(r)),
             IRInstruction::SER_IO(imm) => format!("__io {imm:#04x}"),
@@ -256,7 +259,7 @@ impl DASM
         format!("[{loc:#06x}] {ins}")
     }
 
-    fn get_line(&mut self, loc: u16) -> (Result<String, Error>, Vec<u8>)
+    fn get_line(&mut self, loc: u32) -> (Result<String, Error>, Vec<u8>)
     {
         let mut read_bytes: Vec<u8> = Vec::new();
         let ir = match bytes_to_ins(||
@@ -300,14 +303,14 @@ impl DASM
 
         output.push_str("-----DATA-----\n");
 
-        let mut lines: Vec<(String, u16)> = Vec::new();
+        let mut lines: Vec<(String, u32)> = Vec::new();
 
         loop
         {
-            let location = self.position as u16 - 32;
+            let location = self.position as u32 - 32;
             match self.get_line(location)
             {
-                (Ok(s),_) => lines.push(( format!("{}", s), location )),
+                (Ok(s),_) => lines.push(( s, location )),
                 (Err(e),b) =>
                 {
                     if(self.end_of_file) { break; }

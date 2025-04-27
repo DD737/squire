@@ -1,5 +1,5 @@
 
-16b adresses
+32b adresses
 
 binary header
     size 32 bytes
@@ -50,6 +50,7 @@ instructions marked with [] cannot be executed in user mode!
  00  -> nop
 [01] -> halt
  02  -> clrf [clears flags]
+ 03  -> lea r // load effective address, converts adr in reg to physical adr
 [04] -> serial out
 [05] -> serial in
 [06] -> io instruction
@@ -58,57 +59,77 @@ instructions marked with [] cannot be executed in user mode!
  0E  -> int [interrupt]
  0F  -> dbg
   
- 10  -> 16mov rr
- 11  -> 16mov mr
- 12  -> 16mov rm
- 13  -> 16mov mm
- 14  -> 16mov rra
- 15  -> 16mov mra
- 16  -> 16mov rma
- 17  -> 16mov mma
- 18  -> 16mov rar
- 19  -> 16mov mar
- 1A  -> 16mov ram
- 1B  -> 16mov mam
- 1C  -> 16mov ir
- 1D  -> 16mov im
+ 10  -> 32mov rr
+ 11  -> 32mov mr
+ 12  -> 32mov rm
+ 13  -> 32mov mm
+ 14  -> 32mov rra
+ 15  -> 32mov mra
+ 16  -> 32mov rma
+ 17  -> 32mov mma
+ 18  -> 32mov rar
+ 19  -> 32mov mar
+ 1A  -> 32mov ram
+ 1B  -> 32mov mam
+ 1C  -> 32mov ir
+ 1D  -> 32mov im
   
- 20  ->  8mov rr
- 21  ->  8mov mr
- 22  ->  8mov rm
- 23  ->  8mov mm
- 24  ->  8mov rra
- 25  ->  8mov mra
- 26  ->  8mov rma
- 27  ->  8mov mma
- 28  ->  8mov rar
- 29  ->  8mov mar
- 2A  ->  8mov ram
- 2B  ->  8mov mam
- 2C  ->  8mov ir
- 2D  ->  8mov im
+ 20  -> 16mov rr
+ 21  -> 16mov mr
+ 22  -> 16mov rm
+ 23  -> 16mov mm
+ 24  -> 16mov rra
+ 25  -> 16mov mra
+ 26  -> 16mov rma
+ 27  -> 16mov mma
+ 28  -> 16mov rar
+ 29  -> 16mov mar
+ 2A  -> 16mov ram
+ 2B  -> 16mov mam
+ 2C  -> 16mov ir
+ 2D  -> 16mov im
   
- 30  -> 16psh r
- 31  -> 16psh m
- 32  -> 16psh i
- 33  ->  8psh r
- 34  ->  8psh m
- 35  ->  8psh i
- 36  -> 16pop r
- 37  -> 16pop m
- 38  ->  8pop r
- 39  ->  8pop m
+ 30  ->  8mov rr
+ 31  ->  8mov mr
+ 32  ->  8mov rm
+ 33  ->  8mov mm
+ 34  ->  8mov rra
+ 35  ->  8mov mra
+ 36  ->  8mov rma
+ 37  ->  8mov mma
+ 38  ->  8mov rar
+ 39  ->  8mov mar
+ 3A  ->  8mov ram
+ 3B  ->  8mov mam
+ 3C  ->  8mov ir
+ 3D  ->  8mov im
   
- 40  -> jmp r
- 41  -> jmp m
- 42  -> jmp i
- 43  -> jif r
- 44  -> jif m
- 45  -> jif i
- 46  -> call r
- 47  -> call m
- 48  -> call i
- 4F  -> ret
+ 40  -> 32psh r
+ 41  -> 32psh m
+ 42  -> 32psh i
+ 43  -> 16psh r
+ 44  -> 16psh m
+ 45  -> 16psh i
+ 46  ->  8psh r
+ 47  ->  8psh m
+ 48  ->  8psh i
+ 49  -> 32pop r
+ 4A  -> 32pop m
+ 4B  -> 16pop r
+ 4C  -> 16pop m
+ 4D  ->  8pop r
+ 4E  ->  8pop m
+  
+ 50  -> jmp r
+ 51  -> jmp m
+ 52  -> jmp i
+ 53  -> jif r
+ 54  -> jif m
+ 55  -> jif i
+ 56  -> call r
+ 57  -> call m
+ 58  -> call i
+ 5F  -> ret
   
  60  -> not rr
  61  -> not rm
@@ -244,9 +265,9 @@ binary header (size 32)
     word version
 
 version 0x0000:
-    word entry_point
-    word stack_adr
-    word stack_size
+    dword entry_point
+    dword stack_adr
+    dword stack_size
     byte flags [xxxx xxxx]
 
 io instruction:
@@ -254,7 +275,8 @@ io instruction:
 
     next byte fetched as instruction:
         F0 -> Switches IO device
-            -> ra device ID
+            -> ra 8b device ID
+        F1 -> ray instruction [ in ra ] (see below)
 
 IO Device ID 0 -> FileSystem [selected by default]
         0X -> IO 
@@ -334,6 +356,7 @@ IO Device ID 1 -> InterruptHandler
         03 -> ResolveInterrupt() // resolves the interrupt; "sysret"
         04 -> RemoveInterrupt()  // resolves the interrupt, doesnt return, doesnt unset kernel mode
         05 -> SetSubMode() // still kernel mode, but interrupts on hlt
+        06 -> ResolveInterruptNoRSP() // resolves the interrupt; "sysret"; doesnt set rsp
         
 IO Device ID 2 -> MemoryManager
         00 -> SuspendMapping() // suspend all mappings
@@ -345,4 +368,46 @@ IO Device ID 2 -> MemoryManager
                 -> rd ID
         03 -> RmvMap() // removes mapping of specific ID
             -> ra ID
- 
+
+
+
+ray instructions:
+    00 -> WindowShouldClose() 
+            -> stack: 1 -> should close, 
+                      0 -> shouldnt close
+    01 -> BeginDrawing()
+    02 -> EndDrawing()
+    03 -> DrawRectangle() 
+        -> posx
+        -> posy
+        -> width
+        -> height
+        -> color
+    04 -> DrawFPS()
+        -> posx
+        -> posy
+    05 -> ClearBackground()
+        -> color
+    06 -> DrawText()
+        -> x
+        -> y
+        -> size
+        -> color
+        -> ptr to text
+
+    D0 -> IsWindowResized
+            -> stack: 1 -> was resized, 
+                      0 -> wasnt resized
+    D1 -> GetWindowWidth()
+            -> stack
+    D2 -> GetWindowHeight()
+            -> stack
+
+    ED -> SetTargetFPS
+        -> FPS
+    EE -> CloseWindow()
+    EF -> OpenWindow()
+        -> width
+        -> height
+        -> ptr to title
+        -> B resizable

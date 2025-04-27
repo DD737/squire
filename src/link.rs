@@ -22,7 +22,8 @@ pub mod __link
     
     use colored::Colorize;
 
-    use crate::instructions::helpers::u16_2_u8;
+    use crate::debug::DebugSymbol;
+    use crate::instructions::helpers::*;
     use crate::instructions::{Error, IRBinaryHeader, __IRBinaryHeader};
     use crate::executable::{Executable, __internal::*};
 
@@ -49,11 +50,11 @@ pub mod __link
 
             for s in &mut f.sections
             {
-                match &s.section.section
+                match s.section.section
                 {
-                    &Section::None   => unreachable!(),
-                    &Section::Code   => code_format = Some(s.clone()),
-                    &Section::Data   => data_format = Some(s.clone()),
+                    Section::None   => unreachable!(),
+                    Section::Code   => code_format = Some(s.clone()),
+                    Section::Data   => data_format = Some(s.clone()),
                 }
             }
 
@@ -78,14 +79,17 @@ pub mod __link
 
         }
 
-        pub fn link(&mut self) -> Result<Executable, Error>
+        pub fn link(&mut self) -> Result<(Executable, Vec<DebugSymbol>), Error>
         {
+
+            let mut symbols: Vec<DebugSymbol>  = Vec::new();
 
             let mut binary_header: Option<IRBinaryHeader> = None;
 
             let mut code_section: Vec<u8> = Vec::new();
             let mut data_section: Vec<u8> = Vec::new();
 
+#[allow(clippy::type_complexity)]
             let mut intermediate_list: Vec<
             (
                 Format, 
@@ -100,7 +104,7 @@ pub mod __link
             for f in self.formats.drain(..)
             {
 
-                if let Some(_) = f.header
+                if f.header.is_some()
                 {
                     if(any_have_headr_constructor)
                     {
@@ -142,11 +146,15 @@ pub mod __link
             for l in &mut intermediate_list
             {
 
-                if let Some(code_format) = &mut l.1
+                if let Some(ref mut code_format) = &mut l.1
                 {
+                    for s in &mut code_format.symbols
+                    {
+                        s.pos += l.2 as u32;
+                    }
                     for label in &mut code_format.labels
                     {
-                        label.pos += l.2 as i32;
+                        label.pos += l.2 as i64;
                     }
                     'a: for exp in &code_format.exposed_labels
                     {
@@ -162,11 +170,15 @@ pub mod __link
                     }
                 }
                 
-                if let Some(data_format) = &mut l.3
+                if let Some(ref mut data_format) = &mut l.3
                 {
+                    for s in &mut data_format.symbols
+                    {
+                        s.pos += l.4 as u32;
+                    }
                     for label in &mut data_format.labels
                     {
-                        label.pos += l.4 as i32;
+                        label.pos += l.4 as i64;
                     }
                     'a: for exp in &data_format.exposed_labels
                     {
@@ -216,20 +228,33 @@ pub mod __link
             }
             for l in &mut intermediate_list
             {
-                if let Some(code_format) = &mut l.1
+                if let Some(ref mut code_format) = &mut l.1
                 {
-                    code_section.extend(code_format.section.data.drain(..));
+                    for s in &mut code_format.symbols
+                    {
+                        s.pos += code_section.len() as u32;
+                    }
+                    code_section.append(&mut code_format.section.data);
                 }
-                if let Some(data_format) = &mut l.3
+                if let Some(ref mut data_format) = &mut l.3
                 {
-                    data_section.extend(data_format.section.data.drain(..));
+                    for s in &mut data_format.symbols
+                    {
+                        s.pos += data_section.len() as u32;
+                    }
+                    data_section.append(&mut data_format.section.data);
                 }
             }
             for l in &mut intermediate_list
             {
 
-                if let Some(code_format) = &l.1
+                if let Some(ref mut code_format) = &mut l.1
                 {
+
+                    for s in &mut code_format.symbols
+                    {
+                        symbols.push(s.clone());
+                    }
 
                     for req in &code_format.requested_labels
                     {
@@ -254,7 +279,7 @@ pub mod __link
                                     if(label.name == req.name)
                                     {
                                         let mut lab = label.clone();
-                                        lab.pos += code_section.len() as i32;
+                                        lab.pos += code_section.len() as i64;
                                         _label = Some(lab);
                                         break;
                                     }
@@ -284,7 +309,7 @@ pub mod __link
                                 if(label.name == req.name)
                                 {
                                     let mut lab = label.clone();
-                                    lab.pos += code_section.len() as i32;
+                                    lab.pos += code_section.len() as i64;
                                     _label = Some(lab);
                                     break;
                                 }
@@ -299,17 +324,25 @@ pub mod __link
                         };
 
                         let adr = req.pos as usize + l.2;
-                        let v = u16_2_u8(label.pos as u16);
+                        let v = u32_2_u8(label.pos as u32);
 
-                        code_section[adr + 0] = v.0;
+                        code_section[adr    ] = v.0;
                         code_section[adr + 1] = v.1;
+                        code_section[adr + 2] = v.2;
+                        code_section[adr + 3] = v.3;
 
                     }
 
                 }
 
-                if let Some(data_format) = &l.3
+                if let Some(ref mut data_format) = &mut l.3
                 {
+
+                    for s in &mut data_format.symbols
+                    {
+                        s.pos += code_section.len() as u32;
+                        symbols.push(s.clone());
+                    }
 
                     for req in &data_format.requested_labels
                     {
@@ -334,7 +367,7 @@ pub mod __link
                                     if(label.name == req.name)
                                     {
                                         let mut lab = label.clone();
-                                        lab.pos -= code_section.len() as i32;
+                                        lab.pos -= code_section.len() as i64;
                                         _label = Some(lab);
                                         break;
                                     }
@@ -364,7 +397,7 @@ pub mod __link
                                 if(label.name == req.name)
                                 {
                                     let mut lab = label.clone();
-                                    lab.pos -= code_section.len() as i32;
+                                    lab.pos -= code_section.len() as i64;
                                     _label = Some(label.clone());
                                     break;
                                 }
@@ -378,13 +411,15 @@ pub mod __link
                             None => panic!("couldnt find label for request {:?}", req),
                         };
 
-                        label.pos += code_section.len() as i32;
+                        label.pos += code_section.len() as i64;
 
                         let adr = req.pos as usize + l.4;
-                        let v = u16_2_u8(label.pos as u16);
+                        let v = u32_2_u8(label.pos as u32);
 
-                        data_section[adr + 0] = v.0;
+                        data_section[adr    ] = v.0;
                         data_section[adr + 1] = v.1;
+                        data_section[adr + 2] = v.2;
+                        data_section[adr + 3] = v.3;
 
                     }
 
@@ -419,7 +454,7 @@ pub mod __link
                                     if(label.name == entry.name)
                                     {
                                         let mut lab = label.clone();
-                                        lab.pos += code_section.len() as i32;
+                                        lab.pos += code_section.len() as i64;
                                         _label = Some(lab);
                                         break;
                                     }
@@ -449,7 +484,7 @@ pub mod __link
                                 if(label.name == entry.name)
                                 {
                                     let mut lab = label.clone();
-                                    lab.pos += code_section.len() as i32;
+                                    lab.pos += code_section.len() as i64;
                                     _label = Some(lab);
                                     break;
                                 }
@@ -465,7 +500,7 @@ pub mod __link
 
                         let v = label.pos;
 
-                        header.set_straight_entry(v as u16, entry.fileloc.clone())?;
+                        header.set_straight_entry(v as u32, entry.fileloc.clone())?;
 
                         binary_header = Some(header.finalize()?);
 
@@ -477,12 +512,12 @@ pub mod __link
 
             let section_header = if let Some(header) = binary_header { header.serialize() } else { [0; 32] };
 
-            Ok(Executable
+            Ok((Executable
             {
                 section_header,
                 section_code: code_section,
                 section_data: data_section,
-            })
+            }, symbols))
 
         }
 

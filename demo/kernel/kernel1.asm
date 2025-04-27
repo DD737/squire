@@ -9,7 +9,7 @@ listlen: # ra=ptr
     movrar ra, rb
     cmprr rb, rz
     jifi _listlen_end, E
-    inc ra inc ra
+    inc ra inc ra inc ra inc ra
     jmpi _listlen_loop
  _listlen_end:
     popr rb
@@ -131,26 +131,26 @@ hlt
 %section data
 
 %exp info_execution_mem_map_id
-info_execution_mem_map_id: db 0,0
+info_execution_mem_map_id: db 0,0,0,0
 
 %exp char_newline
 %exp char_newline0
-char_newline: db 0
+char_newline: db 0,0,0
 char_newline0: db '\n,0
 
 %exp char_backspace
 %exp char_backspace0
-char_backspace: db 0
+char_backspace: db 0,0,0
 char_backspace0: db '\b,0
 
 %exp char_space
 %exp char_space0
-char_space: db 0
+char_space: db 0,0,0
 char_space0: db " ",0
 
 %exp char_quote
 %exp char_quote0
-char_quote: db 0
+char_quote: db 0,0,0
 char_quote0: db 34,0
 
 %exp info_shell_hostname

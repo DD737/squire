@@ -4,14 +4,14 @@
 pub mod __internal
 {
 
-    use crate::instructions::{SourceLocation, helpers::HeaderConstructor};
+    use crate::{debug::DebugSymbol, instructions::{helpers::HeaderConstructor, SourceLocation}};
 
     #[derive(Debug, Clone)]
     pub struct Label
     {
         pub name: String,
         pub fileloc: SourceLocation,
-        pub pos: i32,
+        pub pos: i64,
     }
     impl PartialEq for Label
     {
@@ -23,7 +23,7 @@ pub mod __internal
     {
         pub name: String,
         pub loc: SourceLocation,
-        pub pos: u16,
+        pub pos: u32,
     }
 
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -42,19 +42,18 @@ pub mod __internal
     }
     impl SectionData
     {
-        pub fn len(&self) -> usize { self.data.len() }
+        pub fn len     (&self) -> usize { self.data.len      () }
+        pub fn is_empty(&self) -> bool  { self.data.is_empty () }
     }
 
     #[derive(Debug, Clone)]
     pub struct SectionFormat
     {
-        
         pub section: SectionData,
-
         pub labels: Vec<Label>,
         pub exposed_labels: Vec<Label>,
         pub requested_labels: Vec<LabelRequest>,
-
+        pub symbols: Vec<DebugSymbol>,
     }
 
     #[derive(Debug)]
@@ -74,6 +73,10 @@ pub mod __internal
                 len += s.section.len();
             }
             len
+        }
+        pub fn is_empty(&self) -> bool
+        { 
+            self.len() == 0
         }
     }
 

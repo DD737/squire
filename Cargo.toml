@@ -22,3 +22,4 @@ path = "src/dasm/main.rs"
 [dependencies]
 colored = "3.0.0"
 crossterm = "0.29.0"
+raylib = "5.5.1"

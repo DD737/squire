@@ -15,8 +15,8 @@ _cmd_help_fun:
     cmprr ra, rz
     jifi _cmd_help_fun_end, E
 
-    inc rb inc rb
-    inc ra inc ra # skip fn ptr
+    inc rb inc rb inc rb inc rb
+    inc ra inc ra inc ra inc ra # skip fn ptr
 
     pshr rb # secure rb
         cali putstr
@@ -116,11 +116,11 @@ hlt
 %section data
 
 %exp shell_info_running
-shell_info_running: db 0,0
+shell_info_running: db 0,0,0,0
 
 %exp shell_command_index
 shell_command_index: # contains ptrs
-    # data is encoded as following: u16: ptr to func
+    # data is encoded as following: u32: ptr to func
     #                               str: name of the cmd, 0 terminated
     db _shell_command_help
     db _shell_command_exit

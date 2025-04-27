@@ -56,8 +56,16 @@ Good question, go do something productive.
     - [almost] standalone linker
     - IO for files, interrupts and memory mapping
     - kernel, subkernel and user modes
-    - [kernel-demo!](demo/kernel/) [run the make file and use `exec test.bin` to test running a program on the kernel!]
+    - [kernel-demo!](demo/kernel/) [run the make file and use `exec programs/test0.bin` to test running a program on the kernel!]
     - more demo programs that have also been used for debugging
     - expanded instruction set
     - removed ray instruction (will be moved to io device)
     - added [bad] little disassembler for debugging (please dont try to actually use it its not great)
+- ## Version 0.9.2
+    - added raylib support! [see [instructionset](instructionset.txt) for more details]
+    - added syscall to kernel-demo to support raylib calls [check out [the new test program](demo/kernel/programs/test1.asm)!]
+    - added debug symbol support for assembler and vm (use `-d filename` on the asm for a debug symbol table that can be used with `-f filename` on the vm for better errors, `-D filename` can be used on the asm to get a human readable version of the table)
+    - new instruction `lea` to get the result of memory mapping [stolen from actually good assembly of course]
+    - added minor new instructions to io devices (just check the [instructionset](instructionset) for more info)
+    - lots of bugs have been resolved [i couldnt (be bothered to) keep track of them]
+    - very close to a state that can be called 1.0 release!

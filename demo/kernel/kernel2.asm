@@ -88,14 +88,14 @@ shell_split_args:
 
  _shell_split_args_addentry: # subroutine, val is in rc, rd is ptr
     movrra rc, rd
-    inc rd inc rd
+    inc rd inc rd inc rd inc rd
     ret
 
 %ext streq
 %exp shell_test_entry
 shell_test_entry: # ra contains the entry adr, put 1 in ra on match, 0 on unequ
     movrar ra, ra # deref entry
-    inc ra inc ra # ignore func ptr
+    inc ra inc ra inc ra inc ra # ignore func ptr
     movir shell_input_buffer, rb
     cali streq
     ret
@@ -112,7 +112,7 @@ shell_run_entry: # ra has entry adr
 shell_try_run_cmd: # 1 in ra on success, 0 if not found
     movir shell_command_index, rc 
  _shell_try_run_cmd_loop:
-    movrar rc, rd #deref
+    movrar rc, rd # deref
     cmprr rd, rz
     jifi _shell_try_run_cmd_exit_fail, E # end of registered cmds => exit fail
 
@@ -124,7 +124,7 @@ shell_try_run_cmd: # 1 in ra on success, 0 if not found
     cmprr rz, ra
     jifi _shell_try_run_cmd_found, AB # if not zero => found fit
 
-    inc rc inc rc
+    inc rc inc rc inc rc inc rc
     jmpi _shell_try_run_cmd_loop
 
  _shell_try_run_cmd_found:
@@ -138,7 +138,7 @@ shell_try_run_cmd: # 1 in ra on success, 0 if not found
 
 %section data
 
-print_pre_shell_0: db 0,0
+print_pre_shell_0: db 0,0,0,0
 print_pre_shell_1: db " ",0
 print_pre_shell_2: db " $ ",0
 

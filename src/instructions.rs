@@ -91,8 +91,8 @@ macro_rules! error_in
 #[derive(Clone)]
 pub struct SourceLocation
 {
-    pub line: i32,
-    pub column: i32,
+    pub line: i64,
+    pub column: i64,
     pub file: Arc<str>,
 }
 impl Default for SourceLocation
@@ -110,7 +110,7 @@ impl SourceLocation
             file: Arc::default(),
         }
     }
-    pub fn from(line: i32, column: i32, file: Arc<str>) -> Self
+    pub fn from(line: i64, column: i64, file: Arc<str>) -> Self
     {
         Self
         {
@@ -157,7 +157,7 @@ impl TryFrom<u8> for IRRegister
         else { Err(error!("Cannot convert {} to Register!", value)) }
     }
 }
-pub type IRImmediate = u16;
+pub type IRImmediate = u32;
 
 #[derive(Debug, Clone)]
 pub enum IRInstructionModifier
@@ -179,6 +179,7 @@ pub enum IRInstructionWidth
 {
     B8  =  8,
     B16 = 16,
+    B32 = 32,
 }
 
 pub type IRJIFFlags = u8;
@@ -226,6 +227,7 @@ pub enum IRInstruction
     NOP, // no op
     HLT, // halt
     CLF, // cleaf flags
+    LEA(IRRegister),
     SER_OUT(IRRegister),
     SER_IN (IRRegister),
     SER_IO(IRImmediate),
@@ -263,7 +265,7 @@ pub trait __IRBinaryHeader
 #[allow(non_snake_case)]
 pub mod _IRBinaryHeader
 {
-    use helpers::{u16_2_u8, u8_2_u16};
+    use helpers::*;
 
     use super::*;
 
@@ -292,6 +294,11 @@ pub mod _IRBinaryHeader
         {
             let b = u16_2_u8(w);
             self.put8(b.0).put8(b.1)
+        }
+        pub fn put32(&mut self, w: u32) -> &mut Self
+        {
+            let b = u32_2_u8(w);
+            self.put8(b.0).put8(b.1).put8(b.2).put8(b.3)
         }
         pub fn finish(&mut self) -> [u8; 32]
         {
@@ -337,14 +344,24 @@ pub mod _IRBinaryHeader
             *w = u8_2_u16((b0, b1));
             self
         }
+        pub fn get32(&mut self, w: &mut u32) -> &mut Self
+        {
+            let mut b0 = 0;
+            let mut b1 = 0;
+            let mut b2 = 0;
+            let mut b3 = 0;
+            self.get8(&mut b0).get8(&mut b1).get8(&mut b2).get8(&mut b3);
+            *w = u8_2_u32((b0, b1,b2,b3));
+            self
+        }
     }
 
     #[derive(Debug)]
     pub struct _V_0000
     {
-        pub entry_point: u16,
-        pub stack_adr: u16,
-        pub stack_size: u16,
+        pub entry_point: u32,
+        pub stack_adr: u32,
+        pub stack_size: u32,
         pub flags: u8,
     }
     impl __IRBinaryHeader for _V_0000
@@ -353,25 +370,25 @@ pub mod _IRBinaryHeader
         {
             Serializer::new()
                 .put16(0x0000)
-                .put16(self.entry_point)
-                .put16(self.stack_adr)
-                .put16(self.stack_size)
+                .put32(self.entry_point)
+                .put32(self.stack_adr)
+                .put32(self.stack_size)
                 .put8(self.flags)
             .finish()
         }
         fn deserialize(bytes: [u8; 32]) -> Self
         {
             
-            let mut entry_point: u16 = 0;
-            let mut stack_adr: u16 = 0;
-            let mut stack_size: u16 = 0;
+            let mut entry_point: u32 = 0;
+            let mut stack_adr: u32 = 0;
+            let mut stack_size: u32 = 0;
             let mut flags: u8 = 0;
 
             Deserializer::new(bytes)
                 .skip(2)
-                .get16(&mut entry_point)
-                .get16(&mut stack_adr)
-                .get16(&mut stack_size)
+                .get32(&mut entry_point)
+                .get32(&mut stack_adr)
+                .get32(&mut stack_size)
                 .get8(&mut flags);
 
             Self
@@ -425,6 +442,19 @@ pub mod helpers
     use super::{SourceLocation, Error, IRBinaryHeader, _IRBinaryHeader};
     use crate::executable::__internal::Label;
 
+    pub fn u32_2_u8(i:u32) -> (u8,u8,u8,u8)
+    {
+        let (l,r) = u32_2_u16(i);
+        let l = u16_2_u8(l);
+        let r = u16_2_u8(r);
+        (l.0,l.1,r.0,r.1)
+    }
+    pub fn u32_2_u16(i:u32) -> (u16,u16)
+    {
+        let l = ((i & 0xFFFF0000) >> 16) as u16;
+        let r = ( i & 0x0000FFFF       ) as u16;
+        (l, r)
+    }
     pub fn u16_2_u8(i:u16) -> (u8,u8)
     {
         let l = ((i & 0xFF00) >> 8) as u8;
@@ -433,6 +463,10 @@ pub mod helpers
     }
     pub fn u8_2_u16(b:(u8,u8)) -> u16
     { ((b.0 as u16) << 8) | (b.1 as u16) }
+    pub fn u16_2_u32(b:(u16,u16)) -> u32
+    { ((b.0 as u32) << 16) | (b.1 as u32) }
+    pub fn u8_2_u32(b:(u8,u8,u8,u8)) -> u32
+    { ((u8_2_u16((b.0,b.1)) as u32) << 16) | (u8_2_u16((b.2,b.3)) as u32) }
     pub fn parse_escape(str: String, loc: &SourceLocation) -> Result<String, Error>
     {
         
@@ -476,11 +510,11 @@ pub mod helpers
         pub version: u16,
         pub constructing: bool,
 
-        pub stack_pos: u16,
-        pub stack_size: u16,
+        pub stack_pos: u32,
+        pub stack_size: u32,
         pub flags: u8,
         pub entry: Option<Label>,
-        pub _entry: u16,
+        pub _entry: u32,
 
         pub file_loc: String,
     }
@@ -508,7 +542,7 @@ pub mod helpers
             }
         }
 
-        pub fn set_stack_pos(&mut self, pos: u16, loc: SourceLocation) -> Result<(), Error>
+        pub fn set_stack_pos(&mut self, pos: u32, loc: SourceLocation) -> Result<(), Error>
         {
             self.constructing = true;
             match self.version
@@ -519,7 +553,7 @@ pub mod helpers
             };
             Ok(())
         }
-        pub fn set_stack_size(&mut self, size: u16, loc: SourceLocation) -> Result<(), Error>
+        pub fn set_stack_size(&mut self, size: u32, loc: SourceLocation) -> Result<(), Error>
         {
             self.constructing = true;
             match self.version
@@ -541,7 +575,7 @@ pub mod helpers
             };
             Ok(())
         }
-        pub fn set_straight_entry(&mut self, entry: u16, loc: SourceLocation) -> Result<(), Error>
+        pub fn set_straight_entry(&mut self, entry: u32, loc: SourceLocation) -> Result<(), Error>
         {
             self.constructing = true;
             match self.version
@@ -644,16 +678,18 @@ pub mod _instruction_conversion
                     {
                         push(main + 1)?;
                         push(reg)?;
-                        let m = u16_2_u8(m);
+                        let m = u32_2_u8(m);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     }
                     _ => return Err(error!("Invalid ALU2 modifiers! {:?}", m)),
                 }
             },
             IRInstructionModifier::Memory(m0) =>
             {
-                let mem = u16_2_u8(m0);
+                let mem = u32_2_u8(m0);
                 match m.1
                 {
                     IRInstructionModifier::Register(r) =>
@@ -662,15 +698,21 @@ pub mod _instruction_conversion
                         push(reg_to_byte(r))?;
                         push(mem.0)?;
                         push(mem.1)?;
+                        push(mem.2)?;
+                        push(mem.3)?;
                     },
                     IRInstructionModifier::Memory(m) =>
                     {
                         push(main + 3)?;
                         push(mem.0)?;
                         push(mem.1)?;
-                        let m = u16_2_u8(m);
+                        push(mem.2)?;
+                        push(mem.3)?;
+                        let m = u32_2_u8(m);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     }
                     _ => return Err(error!("Invalid ALU2 modifiers! {:?}", m)),
                 }
@@ -734,16 +776,18 @@ pub mod _instruction_conversion
                             {
                                 push(main + 0x20)?;
                                 push(combine_regs(r0, r1))?;
-                                let m = u16_2_u8(m);
+                                let m = u32_2_u8(m);
                                 push(m.0)?;
                                 push(m.1)?;
+                                push(m.2)?;
+                                push(m.3)?;
                             }
                             _ => return Err(error!("Invalid ALU3 modifiers! {:?}", m)),
                         }
                     },
                     IRInstructionModifier::Memory(m1) =>
                     {
-                        let m1 = u16_2_u8(m1);
+                        let m1 = u32_2_u8(m1);
                         match m.2
                         {
                             IRInstructionModifier::Register(r) =>
@@ -752,6 +796,8 @@ pub mod _instruction_conversion
                                 push(combine_regs(r0, reg_to_byte(r)))?;
                                 push(m1.0)?;
                                 push(m1.1)?;
+                                push(m1.2)?;
+                                push(m1.3)?;
                             },
                             IRInstructionModifier::Memory(m) =>
                             {
@@ -759,9 +805,13 @@ pub mod _instruction_conversion
                                 push(r0)?;
                                 push(m1.0)?;
                                 push(m1.1)?;
-                                let m = u16_2_u8(m);
+                                push(m1.2)?;
+                                push(m1.3)?;
+                                let m = u32_2_u8(m);
                                 push(m.0)?;
                                 push(m.1)?;
+                                push(m.2)?;
+                                push(m.3)?;
                             }
                             _ => return Err(error!("Invalid ALU3 modifiers! {:?}", m)),
                         }
@@ -771,7 +821,7 @@ pub mod _instruction_conversion
             },
             IRInstructionModifier::Memory(m0) =>
             {
-                let m0 = u16_2_u8(m0);
+                let m0 = u32_2_u8(m0);
                 match m.1
                 {
                     IRInstructionModifier::Register(r) =>
@@ -785,6 +835,8 @@ pub mod _instruction_conversion
                                 push(combine_regs(r1, reg_to_byte(r)))?;
                                 push(m0.0)?;
                                 push(m0.1)?;
+                                push(m0.2)?;
+                                push(m0.3)?;
                             },
                             IRInstructionModifier::Memory(m) =>
                             {
@@ -792,16 +844,20 @@ pub mod _instruction_conversion
                                 push(r1)?;
                                 push(m0.0)?;
                                 push(m0.1)?;
-                                let m = u16_2_u8(m);
+                                push(m0.2)?;
+                                push(m0.3)?;
+                                let m = u32_2_u8(m);
                                 push(m.0)?;
                                 push(m.1)?;
+                                push(m.2)?;
+                                push(m.3)?;
                             }
                             _ => return Err(error!("Invalid ALU3 modifiers! {:?}", m)),
                         }
                     },
                     IRInstructionModifier::Memory(m1) =>
                     {
-                        let m1 = u16_2_u8(m1);
+                        let m1 = u32_2_u8(m1);
                         match m.2
                         {
                             IRInstructionModifier::Register(r) =>
@@ -810,19 +866,29 @@ pub mod _instruction_conversion
                                 push(reg_to_byte(r))?;
                                 push(m0.0)?;
                                 push(m0.1)?;
+                                push(m0.2)?;
+                                push(m0.3)?;
                                 push(m1.0)?;
                                 push(m1.1)?;
+                                push(m1.2)?;
+                                push(m1.3)?;
                             },
                             IRInstructionModifier::Memory(m) =>
                             {
                                 push(main + 0x80)?;
                                 push(m0.0)?;
                                 push(m0.1)?;
+                                push(m0.2)?;
+                                push(m0.3)?;
                                 push(m1.0)?;
                                 push(m1.1)?;
-                                let m = u16_2_u8(m);
+                                push(m1.2)?;
+                                push(m1.3)?;
+                                let m = u32_2_u8(m);
                                 push(m.0)?;
                                 push(m.1)?;
+                                push(m.2)?;
+                                push(m.3)?;
                             }
                             _ => return Err(error!("Invalid ALU3 modifiers! {:?}", m)),
                         }
@@ -855,6 +921,7 @@ pub mod _instruction_conversion
             IRInstruction::NOP => push(0x00)?,
             IRInstruction::HLT => push(0x01)?,
             IRInstruction::CLF => push(0x02)?,
+            IRInstruction::LEA(r) => { push(0x03)?; push(reg_to_byte(r))?; },
             IRInstruction::DBG => push(0x0F)?,
 
             IRInstruction::SER_OUT(r) => { push(0x04)?; push(reg_to_byte(r))?; },
@@ -869,16 +936,16 @@ pub mod _instruction_conversion
             IRInstruction::MOV(w, (l,r)) =>
             {
 
-                match r 
+                if let IRInstructionModifier::Immediate(_) = r 
                 {
-                    IRInstructionModifier::Immediate(_) => return Err(error!("Instruction mov doesnt accept immediates as second argument!")),
-                    _ => {}
+                    return Err(error!("Instruction mov doesnt accept immediates as second argument!"));
                 }
 
                 let mut main = match w 
                 {
-                    IRInstructionWidth::B8  => 0x20,
-                    IRInstructionWidth::B16 => 0x10,
+                    IRInstructionWidth::B8  => 0x30,
+                    IRInstructionWidth::B16 => 0x20,
+                    IRInstructionWidth::B32 => 0x10,
                 };
 
                 {
@@ -901,9 +968,11 @@ pub mod _instruction_conversion
                                     main += 0x02;
                                     push(main)?;
                                     push(reg)?;
-                                    let m = u16_2_u8(m);
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 IRInstructionModifier::RegisterAddress(r) => 
                                 {
@@ -916,16 +985,18 @@ pub mod _instruction_conversion
                                     main += 0x06;
                                     push(main)?;
                                     push(reg)?;
-                                    let m = u16_2_u8(m);
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 _ => {},
                             }
                         },
                         IRInstructionModifier::Memory(ml) => 
                         {
-                            let m0 = u16_2_u8(ml);
+                            let m0 = u32_2_u8(ml);
                             match r
                             {
                                 IRInstructionModifier::Register(r) => 
@@ -935,6 +1006,8 @@ pub mod _instruction_conversion
                                     push(reg_to_byte(r))?;
                                     push(m0.0)?;
                                     push(m0.1)?;
+                                    push(m0.2)?;
+                                    push(m0.3)?;
                                 },
                                 IRInstructionModifier::Memory(m) => 
                                 {
@@ -942,9 +1015,13 @@ pub mod _instruction_conversion
                                     push(main)?;
                                     push(m0.0)?;
                                     push(m0.1)?;
-                                    let m = u16_2_u8(m);
+                                    push(m0.2)?;
+                                    push(m0.3)?;
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 IRInstructionModifier::RegisterAddress(r) => 
                                 {
@@ -953,6 +1030,8 @@ pub mod _instruction_conversion
                                     push(reg_to_byte(r))?;
                                     push(m0.0)?;
                                     push(m0.1)?;
+                                    push(m0.2)?;
+                                    push(m0.3)?;
                                 },
                                 IRInstructionModifier::MemoryAddress(m) => 
                                 {
@@ -960,9 +1039,13 @@ pub mod _instruction_conversion
                                     push(main)?;
                                     push(m0.0)?;
                                     push(m0.1)?;
-                                    let m = u16_2_u8(m);
+                                    push(m0.2)?;
+                                    push(m0.3)?;
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 _ => {},
                             }
@@ -983,9 +1066,11 @@ pub mod _instruction_conversion
                                     main += 0x0A;
                                     push(main)?;
                                     push(reg)?;
-                                    let m = u16_2_u8(m);
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 IRInstructionModifier::RegisterAddress (_) => return Err(error!("Instruction mov doesnt accept register dereferences as second argument!")),
                                 IRInstructionModifier::MemoryAddress   (_) => return Err(error!("Instruction mov doesnt accept memory dereferences as second argument!")),
@@ -994,7 +1079,7 @@ pub mod _instruction_conversion
                         },
                         IRInstructionModifier::MemoryAddress(ml) => 
                         {
-                            let m0 = u16_2_u8(ml);
+                            let m0 = u32_2_u8(ml);
                             match r
                             {
                                 IRInstructionModifier::Register(r) => 
@@ -1004,6 +1089,8 @@ pub mod _instruction_conversion
                                     push(reg_to_byte(r))?;
                                     push(m0.0)?;
                                     push(m0.1)?;
+                                    push(m0.2)?;
+                                    push(m0.3)?;
                                 },
                                 IRInstructionModifier::Memory(m) => 
                                 {
@@ -1011,9 +1098,13 @@ pub mod _instruction_conversion
                                     push(main)?;
                                     push(m0.0)?;
                                     push(m0.1)?;
-                                    let m = u16_2_u8(m);
+                                    push(m0.2)?;
+                                    push(m0.3)?;
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 IRInstructionModifier::RegisterAddress (_) => return Err(error!("Instruction mov doesnt accept register dereferences as second argument!")),
                                 IRInstructionModifier::MemoryAddress   (_) => return Err(error!("Instruction mov doesnt accept memory dereferences as second argument!")),
@@ -1022,7 +1113,7 @@ pub mod _instruction_conversion
                         },
                         IRInstructionModifier::Immediate(il) => 
                         {
-                            let m0 = u16_2_u8(il);
+                            let m0 = u32_2_u8(il);
                             match r
                             {
                                 IRInstructionModifier::Register(r) => 
@@ -1032,6 +1123,8 @@ pub mod _instruction_conversion
                                     push(reg_to_byte(r))?;
                                     push(m0.0)?;
                                     push(m0.1)?;
+                                    push(m0.2)?;
+                                    push(m0.3)?;
                                 },
                                 IRInstructionModifier::Memory(m) => 
                                 {
@@ -1039,9 +1132,13 @@ pub mod _instruction_conversion
                                     push(main)?;
                                     push(m0.0)?;
                                     push(m0.1)?;
-                                    let m = u16_2_u8(m);
+                                    push(m0.2)?;
+                                    push(m0.3)?;
+                                    let m = u32_2_u8(m);
                                     push(m.0)?;
                                     push(m.1)?;
+                                    push(m.2)?;
+                                    push(m.3)?;
                                 },
                                 IRInstructionModifier::RegisterAddress (_) => return Err(error!("Instruction mov doesnt accept register dereferences as second argument!")),
                                 IRInstructionModifier::MemoryAddress   (_) => return Err(error!("Instruction mov doesnt accept memory dereferences as second argument!")),
@@ -1059,8 +1156,9 @@ pub mod _instruction_conversion
                 
                 let mut main = match w 
                 {
-                    IRInstructionWidth::B16 => 0x30,
-                    IRInstructionWidth::B8  => 0x33,
+                    IRInstructionWidth::B32 => 0x40,
+                    IRInstructionWidth::B16 => 0x43,
+                    IRInstructionWidth::B8  => 0x46,
                 };
 
                 {
@@ -1076,17 +1174,21 @@ pub mod _instruction_conversion
                         {
                             main += 0x01;
                             push(main)?;
-                            let m = u16_2_u8(m);
+                            let m = u32_2_u8(m);
                             push(m.0)?;
                             push(m.1)?;
+                            push(m.2)?;
+                            push(m.3)?;
                         },
                         IRInstructionModifier::Immediate(i) =>
                         {
-                            main += 0x01;
+                            main += 0x02;
                             push(main)?;
-                            let m = u16_2_u8(i);
+                            let m = u32_2_u8(i);
                             push(m.0)?;
                             push(m.1)?;
+                            push(m.2)?;
+                            push(m.3)?;
                         },
                         IRInstructionModifier::RegisterAddress (_) => return Err(error!("Instruction psh doesnt accept register dereferences as second argument!")),
                         IRInstructionModifier::MemoryAddress   (_) => return Err(error!("Instruction psh doesnt accept memory dereferences as second argument!")),
@@ -1100,8 +1202,9 @@ pub mod _instruction_conversion
                 
                 let mut main = match w 
                 {
-                    IRInstructionWidth::B16 => 0x36,
-                    IRInstructionWidth::B8  => 0x38,
+                    IRInstructionWidth::B32 => 0x49,
+                    IRInstructionWidth::B16 => 0x4B,
+                    IRInstructionWidth::B8  => 0x4D,
                 };
 
                 {
@@ -1117,9 +1220,11 @@ pub mod _instruction_conversion
                         {
                             main += 0x01;
                             push(main)?;
-                            let m = u16_2_u8(m);
+                            let m = u32_2_u8(m);
                             push(m.0)?;
                             push(m.1)?;
+                            push(m.2)?;
+                            push(m.3)?;
                         },
                         IRInstructionModifier::RegisterAddress (_) => return Err(error!("Instruction pop doesnt accept register dereferences as second argument!")),
                         IRInstructionModifier::MemoryAddress   (_) => return Err(error!("Instruction pop doesnt accept memory dereferences as second argument!")),
@@ -1137,22 +1242,26 @@ pub mod _instruction_conversion
                 {
                     IRInstructionModifier::Register(r) =>
                     {
-                        push(0x40)?;
+                        push(0x50)?;
                         push(reg_to_byte(r))?;
                     },
                     IRInstructionModifier::Memory(m) =>
                     {
-                        push(0x41)?;
-                        let m = u16_2_u8(m);
+                        push(0x51)?;
+                        let m = u32_2_u8(m);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     },
                     IRInstructionModifier::Immediate(i) =>
                     {
-                        push(0x42)?;
-                        let m = u16_2_u8(i);
+                        push(0x52)?;
+                        let m = u32_2_u8(i);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     },
                     _ => return Err(error!("Instruction jmp can only take registers, memory addresses and immediates!")),
                 }
@@ -1165,22 +1274,26 @@ pub mod _instruction_conversion
                 {
                     IRInstructionModifier::Register(r) =>
                     {
-                        push(0x43)?;
+                        push(0x53)?;
                         push(reg_to_byte(r))?;
                     },
                     IRInstructionModifier::Memory(m) =>
                     {
-                        push(0x44)?;
-                        let m = u16_2_u8(m);
+                        push(0x54)?;
+                        let m = u32_2_u8(m);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     },
                     IRInstructionModifier::Immediate(i) =>
                     {
-                        push(0x45)?;
-                        let m = u16_2_u8(i);
+                        push(0x55)?;
+                        let m = u32_2_u8(i);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     },
                     _ => return Err(error!("Instruction jif can only take registers, memory addresses and immediates!")),
                 }
@@ -1195,22 +1308,26 @@ pub mod _instruction_conversion
                 {
                     IRInstructionModifier::Register(r) =>
                     {
-                        push(0x46)?;
+                        push(0x56)?;
                         push(reg_to_byte(r))?;
                     },
                     IRInstructionModifier::Memory(m) =>
                     {
-                        push(0x47)?;
-                        let m = u16_2_u8(m);
+                        push(0x57)?;
+                        let m = u32_2_u8(m);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     },
                     IRInstructionModifier::Immediate(i) =>
                     {
-                        push(0x48)?;
-                        let m = u16_2_u8(i);
+                        push(0x58)?;
+                        let m = u32_2_u8(i);
                         push(m.0)?;
                         push(m.1)?;
+                        push(m.2)?;
+                        push(m.3)?;
                     },
                     _ => return Err(error!("Instruction cal can only take registers, memory addresses and immediates!")),
                 }
@@ -1233,6 +1350,9 @@ pub mod _instruction_conversion
     {
 
         use super::*;
+    
+        fn fetch_dword(fetch: &mut impl FnMut() -> Result<u8, Error>) -> Result<u32, Error>
+        { Ok(u16_2_u32((fetch_word(fetch)?, fetch_word(fetch)?))) }
     
         fn fetch_word(fetch: &mut impl FnMut() -> Result<u8, Error>) -> Result<u16, Error>
         { Ok(u8_2_u16((fetch()?, fetch()?))) }
@@ -1261,10 +1381,10 @@ pub mod _instruction_conversion
                 0x00 => return Ok(IRInstruction::NOP),
                 0x01 => return Ok(IRInstruction::HLT),
                 0x02 => return Ok(IRInstruction::CLF),
-                0x06 => return Ok(IRInstruction::SER_IO(fetch()? as u16)),
+                0x06 => return Ok(IRInstruction::SER_IO(fetch()? as IRImmediate)),
                 0x07 => return Ok(IRInstruction::PSHFLG),
                 0x08 => return Ok(IRInstruction::POPFLG),
-                0x0E => return Ok(IRInstruction::INT(fetch()? as u16)),
+                0x0E => return Ok(IRInstruction::INT(fetch()? as IRImmediate)),
                 0x0F => return Ok(IRInstruction::DBG),
 
                 0x4F => return Ok(IRInstruction::RET),
@@ -1273,524 +1393,575 @@ pub mod _instruction_conversion
 
             };
 
-            Ok(if(ins >= 0x70) // complex alu
-            {
-
-                let modifiers: IRALUInstructionModifier3 = match ((ins & 0xF0) >> 4)
+            Ok(
+                    if(ins >= 0x70) // complex alu
                 {
-                    0x7 => None,
-                    0x8 => 
-                    {
-                        let reg01 = get2reg(&mut fetch)?;
-                        let reg2  = get_reg(&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Register(reg01.0),
-                            IRInstructionModifier::Register(reg01.1),
-                            IRInstructionModifier::Register(reg2   ),
-                        ))
-                    }, // rrr
-                    0x9 => 
-                    {
-                        let reg01 = get2reg    (&mut fetch)?;
-                        let mem   = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Register (reg01.0),
-                            IRInstructionModifier::Register (reg01.1),
-                            IRInstructionModifier::Memory   (mem    ),
-                        ))
-                    }, // rrm
-                    0xA => 
-                    {
-                        let reg01 = get2reg    (&mut fetch)?;
-                        let mem   = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Register (reg01.0),
-                            IRInstructionModifier::Memory   (mem    ),
-                            IRInstructionModifier::Register (reg01.1),
-                        ))
-                    }, // rmr
-                    0xB => 
-                    {
-                        let reg  = get_reg    (&mut fetch)?;
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Register (reg ),
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Memory   (mem1),
-                        ))
-                    }, // rmm
-                    0xC => 
-                    {
-                        let reg01 = get2reg    (&mut fetch)?;
-                        let mem   = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Memory   (mem    ),
-                            IRInstructionModifier::Register (reg01.0),
-                            IRInstructionModifier::Register (reg01.1),
-                        ))
-                    }, // mrr
-                    0xD => 
-                    {
-                        let reg  = get_reg    (&mut fetch)?;
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Register (reg ),
-                            IRInstructionModifier::Memory   (mem1),
-                        ))
-                    }, // mrm
-                    0xE => 
-                    {
-                        let reg  = get_reg    (&mut fetch)?;
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Memory   (mem1),
-                            IRInstructionModifier::Register (reg ),
-                        ))
-                    }, // mmr
-                    0xF => 
-                    {
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        let mem2 = fetch_word (&mut fetch)?;
-                        Some((
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Memory   (mem1),
-                            IRInstructionModifier::Memory   (mem2),
-                        ))
-                    }, // mmm
 
-                    _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ((ins & 0xF0) >> 4))),
-                };
-
-                IRInstruction::ALU(IRALUInstruction::Complex(
-                    match (ins & 0xF)
+                    let modifiers: IRALUInstructionModifier3 = match ((ins & 0xF0) >> 4)
                     {
+                        0x7 => None,
+                        0x8 => 
+                        {
+                            let reg01 = get2reg(&mut fetch)?;
+                            let reg2  = get_reg(&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Register(reg01.0),
+                                IRInstructionModifier::Register(reg01.1),
+                                IRInstructionModifier::Register(reg2   ),
+                            ))
+                        }, // rrr
+                        0x9 => 
+                        {
+                            let reg01 = get2reg     (&mut fetch)?;
+                            let mem   = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Register (reg01.0),
+                                IRInstructionModifier::Register (reg01.1),
+                                IRInstructionModifier::Memory   (mem    ),
+                            ))
+                        }, // rrm
+                        0xA => 
+                        {
+                            let reg01 = get2reg     (&mut fetch)?;
+                            let mem   = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Register (reg01.0),
+                                IRInstructionModifier::Memory   (mem    ),
+                                IRInstructionModifier::Register (reg01.1),
+                            ))
+                        }, // rmr
+                        0xB => 
+                        {
+                            let reg  = get_reg     (&mut fetch)?;
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Register (reg ),
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Memory   (mem1),
+                            ))
+                        }, // rmm
+                        0xC => 
+                        {
+                            let reg01 = get2reg     (&mut fetch)?;
+                            let mem   = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Memory   (mem    ),
+                                IRInstructionModifier::Register (reg01.0),
+                                IRInstructionModifier::Register (reg01.1),
+                            ))
+                        }, // mrr
+                        0xD => 
+                        {
+                            let reg  = get_reg     (&mut fetch)?;
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Register (reg ),
+                                IRInstructionModifier::Memory   (mem1),
+                            ))
+                        }, // mrm
+                        0xE => 
+                        {
+                            let reg  = get_reg     (&mut fetch)?;
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Memory   (mem1),
+                                IRInstructionModifier::Register (reg ),
+                            ))
+                        }, // mmr
+                        0xF => 
+                        {
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            let mem2 = fetch_dword (&mut fetch)?;
+                            Some((
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Memory   (mem1),
+                                IRInstructionModifier::Memory   (mem2),
+                            ))
+                        }, // mmm
 
-                        0x0 => _IRALUInstruction3:: ADD (modifiers),
-                        0x1 => _IRALUInstruction3:: SUB (modifiers),
-                        0x2 => _IRALUInstruction3:: MUL (modifiers),
-                        0x3 => _IRALUInstruction3:: DIV (modifiers),
-                        0x4 => _IRALUInstruction3:: MOD (modifiers),
-                        0x5 => _IRALUInstruction3:: AND (modifiers),
-                        0x6 => _IRALUInstruction3::  OR (modifiers),
-                        0x7 => _IRALUInstruction3:: XOR (modifiers),
-                        0x8 => _IRALUInstruction3:: SHL (modifiers),
-                        0x9 => _IRALUInstruction3:: SHR (modifiers),
-                        0xA => _IRALUInstruction3::NAND (modifiers),
-                        0xB => _IRALUInstruction3:: NOR (modifiers),
+                        _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ((ins & 0xF0) >> 4))),
+                    };
 
-                        _ => return Err(error!("FATAL: INVALID INSTRUCTION! ({:#x})", (ins & 0xF))),
+                    IRInstruction::ALU(IRALUInstruction::Complex(
+                        match (ins & 0xF)
+                        {
 
-                    }
-                ))
+                            0x0 => _IRALUInstruction3:: ADD (modifiers),
+                            0x1 => _IRALUInstruction3:: SUB (modifiers),
+                            0x2 => _IRALUInstruction3:: MUL (modifiers),
+                            0x3 => _IRALUInstruction3:: DIV (modifiers),
+                            0x4 => _IRALUInstruction3:: MOD (modifiers),
+                            0x5 => _IRALUInstruction3:: AND (modifiers),
+                            0x6 => _IRALUInstruction3::  OR (modifiers),
+                            0x7 => _IRALUInstruction3:: XOR (modifiers),
+                            0x8 => _IRALUInstruction3:: SHL (modifiers),
+                            0x9 => _IRALUInstruction3:: SHR (modifiers),
+                            0xA => _IRALUInstruction3::NAND (modifiers),
+                            0xB => _IRALUInstruction3:: NOR (modifiers),
 
-            }
-            else if(ins >= 0x60) // simple alu
-            {
+                            _ => return Err(error!("FATAL: INVALID INSTRUCTION! ({:#x})", (ins & 0xF))),
 
-                match ins
-                {
-                    0x6E =>
-                    {
-                        let reg = get_reg(&mut fetch)?;
-                        return Ok(IRInstruction::INC(reg));
-                    },
-                    0x6F =>
-                    {
-                        let reg = get_reg(&mut fetch)?;
-                        return Ok(IRInstruction::DEC(reg));
-                    },
-                    _ => {},
+                        }
+                    ))
+
                 }
-                
-                let mut not_ins = true;
-
-                let modifiers: IRInstructionModifier2 = match ins
+                else if(ins >= 0x60) // simple alu
                 {
 
-                    0x60 => 
+                    match ins
                     {
-                        let regs = get2reg(&mut fetch)?;
-                        (
-                            IRInstructionModifier::Register(regs.0),
-                            IRInstructionModifier::Register(regs.1),
-                        )
-                    }, //not rr
-                    0x61 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory   (mem),
-                            IRInstructionModifier::Register (reg),
-                        )
-                    }, //not mr
-                    0x62 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Register (reg),
-                            IRInstructionModifier::Memory   (mem),
-                        )
-                    }, //not rm
-                    0x63 => 
-                    {
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Memory   (mem1),
-                        )
-                    }, //not mm
+                        0x6E =>
+                        {
+                            let reg = get_reg(&mut fetch)?;
+                            return Ok(IRInstruction::INC(reg));
+                        },
+                        0x6F =>
+                        {
+                            let reg = get_reg(&mut fetch)?;
+                            return Ok(IRInstruction::DEC(reg));
+                        },
+                        _ => {},
+                    }
+                    
+                    let mut not_ins = true;
 
-                    0x64 => 
+                    let modifiers: IRInstructionModifier2 = match ins
                     {
-                        not_ins = false;
-                        let regs = get2reg(&mut fetch)?;
-                        (
-                            IRInstructionModifier::Register(regs.0),
-                            IRInstructionModifier::Register(regs.1),
-                        )
-                    }, //cmp rr
-                    0x65 => 
-                    {
-                        not_ins = false;
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory   (mem),
-                            IRInstructionModifier::Register (reg),
-                        )
-                    }, //cmp mr
-                    0x66 => 
-                    {
-                        not_ins = false;
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Register (reg),
-                            IRInstructionModifier::Memory   (mem),
-                        )
-                    }, //cmp rm
-                    0x67 => 
-                    {
-                        not_ins = false;
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Memory   (mem1),
-                        )
-                    }, //cmp mm
 
-                    _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ins)),
+                        0x60 => 
+                        {
+                            let regs = get2reg(&mut fetch)?;
+                            (
+                                IRInstructionModifier::Register(regs.0),
+                                IRInstructionModifier::Register(regs.1),
+                            )
+                        }, //not rr
+                        0x61 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory   (mem),
+                                IRInstructionModifier::Register (reg),
+                            )
+                        }, //not mr
+                        0x62 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Register (reg),
+                                IRInstructionModifier::Memory   (mem),
+                            )
+                        }, //not rm
+                        0x63 => 
+                        {
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Memory   (mem1),
+                            )
+                        }, //not mm
 
-                };
+                        0x64 => 
+                        {
+                            not_ins = false;
+                            let regs = get2reg(&mut fetch)?;
+                            (
+                                IRInstructionModifier::Register(regs.0),
+                                IRInstructionModifier::Register(regs.1),
+                            )
+                        }, //cmp rr
+                        0x65 => 
+                        {
+                            not_ins = false;
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory   (mem),
+                                IRInstructionModifier::Register (reg),
+                            )
+                        }, //cmp mr
+                        0x66 => 
+                        {
+                            not_ins = false;
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Register (reg),
+                                IRInstructionModifier::Memory   (mem),
+                            )
+                        }, //cmp rm
+                        0x67 => 
+                        {
+                            not_ins = false;
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Memory   (mem1),
+                            )
+                        }, //cmp mm
 
-                IRInstruction::ALU(IRALUInstruction::Simple(
-                    if(not_ins)
+                        _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ins)),
+
+                    };
+
+                    IRInstruction::ALU(IRALUInstruction::Simple(
+                        if(not_ins)
+                        {
+                            _IRALUInstruction2::NOT(modifiers)
+                        }
+                        else
+                        {
+                            _IRALUInstruction2::CMP(modifiers)
+                        }
+                    ))
+
+                }
+                else if(ins >= 0x50) // jump instructions
+                {
+                    
+                    let mut jmp_ins = true;
+                    let mut jif_ins = true;
+
+                    let modifier = match ins
                     {
-                        _IRALUInstruction2::NOT(modifiers)
+
+                        0x50 => IRInstructionModifier::Register (get_reg(&mut fetch)?),
+                        0x51 => IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?),
+                        0x52 => IRInstructionModifier::Immediate(fetch_dword(&mut fetch)?),
+
+                        0x53 => 
+                        {
+                            jmp_ins = false;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x54 => 
+                        {
+                            jmp_ins = false;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x55 => 
+                        {
+                            jmp_ins = false;
+                            IRInstructionModifier::Immediate(fetch_dword(&mut fetch)?)
+                        },
+
+                        0x56 => 
+                        {
+                            jmp_ins = false;
+                            jif_ins = false;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x57 => 
+                        {
+                            jmp_ins = false;
+                            jif_ins = false;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x58 => 
+                        {
+                            jmp_ins = false;
+                            jif_ins = false;
+                            IRInstructionModifier::Immediate(fetch_dword(&mut fetch)?)
+                        },
+                        
+                        _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ins)),
+
+                    };
+
+                    if(jmp_ins)
+                    {
+                        IRInstruction::JMP(modifier)
+                    }
+                    else if(jif_ins)
+                    {
+                        IRInstruction::JIF(modifier, fetch()?)
                     }
                     else
                     {
-                        _IRALUInstruction2::CMP(modifiers)
+                        IRInstruction::CAL(modifier)
                     }
-                ))
 
-            }
-            else if(ins >= 0x40) // jump instructions
-            {
-                
-                let mut jmp_ins = true;
-                let mut jif_ins = true;
-
-                let modifier = match ins
+                }
+                else if(ins >= 0x40) // stack instructions
                 {
-
-                    0x40 => IRInstructionModifier::Register (get_reg(&mut fetch)?),
-                    0x41 => IRInstructionModifier::Memory   (fetch_word(&mut fetch)?),
-                    0x42 => IRInstructionModifier::Immediate(fetch_word(&mut fetch)?),
-
-                    0x43 => 
-                    {
-                        jmp_ins = false;
-                        IRInstructionModifier::Register (get_reg(&mut fetch)?)
-                    },
-                    0x44 => 
-                    {
-                        jmp_ins = false;
-                        IRInstructionModifier::Memory   (fetch_word(&mut fetch)?)
-                    },
-                    0x45 => 
-                    {
-                        jmp_ins = false;
-                        IRInstructionModifier::Immediate(fetch_word(&mut fetch)?)
-                    },
-
-                    0x46 => 
-                    {
-                        jmp_ins = false;
-                        jif_ins = false;
-                        IRInstructionModifier::Register (get_reg(&mut fetch)?)
-                    },
-                    0x47 => 
-                    {
-                        jmp_ins = false;
-                        jif_ins = false;
-                        IRInstructionModifier::Memory   (fetch_word(&mut fetch)?)
-                    },
-                    0x48 => 
-                    {
-                        jmp_ins = false;
-                        jif_ins = false;
-                        IRInstructionModifier::Immediate(fetch_word(&mut fetch)?)
-                    },
                     
-                    _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ins)),
+                    let mut push_ins = true;
+                    let ins_width;
 
-                };
+                    let modifier = match ins
+                    {
 
-                if(jmp_ins)
-                {
-                    IRInstruction::JMP(modifier)
+                        0x40 => 
+                        {
+                            ins_width = IRInstructionWidth::B32;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x41 => 
+                        {
+                            ins_width = IRInstructionWidth::B32;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x42 => 
+                        {
+                            ins_width = IRInstructionWidth::B32;
+                            IRInstructionModifier::Immediate(fetch_dword(&mut fetch)?)
+                        },
+
+                        0x43 => 
+                        {
+                            ins_width = IRInstructionWidth::B16;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x44 => 
+                        {
+                            ins_width = IRInstructionWidth::B16;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x45 => 
+                        {
+                            ins_width = IRInstructionWidth::B16;
+                            IRInstructionModifier::Immediate(fetch_dword(&mut fetch)?)
+                        },
+
+                        0x46 => 
+                        {
+                            ins_width = IRInstructionWidth::B8;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x47 => 
+                        {
+                            ins_width = IRInstructionWidth::B8;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x48 => 
+                        {
+                            ins_width = IRInstructionWidth::B8;
+                            IRInstructionModifier::Immediate(fetch_dword(&mut fetch)?)
+                        },
+
+                        0x49 => 
+                        {
+                            push_ins = false;
+                            ins_width = IRInstructionWidth::B32;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x4A => 
+                        {
+                            push_ins = false;
+                            ins_width = IRInstructionWidth::B32;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x4B => 
+                        {
+                            push_ins = false;
+                            ins_width = IRInstructionWidth::B16;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x4C => 
+                        {
+                            push_ins = false;
+                            ins_width = IRInstructionWidth::B16;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        0x4D => 
+                        {
+                            push_ins = false;
+                            ins_width = IRInstructionWidth::B8;
+                            IRInstructionModifier::Register (get_reg(&mut fetch)?)
+                        },
+                        0x4E => 
+                        {
+                            push_ins = false;
+                            ins_width = IRInstructionWidth::B8;
+                            IRInstructionModifier::Memory   (fetch_dword(&mut fetch)?)
+                        },
+                        
+                        _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ins)),
+
+                    };
+
+                    if(push_ins)
+                    {
+                        IRInstruction::PSH(ins_width, modifier)
+                    }
+                    else
+                    {
+                        IRInstruction::POP(ins_width, modifier)
+                    }
+
                 }
-                else if(jif_ins)
+                else if(ins >= 0x10) // mov instructions
                 {
-                    IRInstruction::JIF(modifier, fetch()?)
-                }
-                else
-                {
-                    IRInstruction::CAL(modifier)
-                }
-
-            }
-            else if(ins >= 0x30) // stack instructions
-            {
-                
-                let mut push_ins = true;
-                let mut ins_width = IRInstructionWidth::B16;
-
-                let modifier = match ins
-                {
-
-                    0x30 => IRInstructionModifier::Register  (get_reg(&mut fetch)?),
-                    0x31 => IRInstructionModifier::Memory    (fetch_word(&mut fetch)?),
-                    0x32 => IRInstructionModifier::Immediate (fetch_word(&mut fetch)?),
-                    0x33 => 
-                    {
-                        ins_width = IRInstructionWidth::B8;
-                        IRInstructionModifier::Register (get_reg(&mut fetch)?)
-                    },
-                    0x34 => 
-                    {
-                        ins_width = IRInstructionWidth::B8;
-                        IRInstructionModifier::Memory   (fetch_word(&mut fetch)?)
-                    },
-                    0x35 => 
-                    {
-                        ins_width = IRInstructionWidth::B8;
-                        IRInstructionModifier::Immediate(fetch_word(&mut fetch)?)
-                    },
-
-                    0x36 => 
-                    {
-                        push_ins = false;
-                        IRInstructionModifier::Register (get_reg(&mut fetch)?)
-                    },
-                    0x37 => 
-                    {
-                        push_ins = false;
-                        IRInstructionModifier::Memory   (fetch_word(&mut fetch)?)
-                    },
-                    0x38 => 
-                    {
-                        push_ins = false;
-                        ins_width = IRInstructionWidth::B8;
-                        IRInstructionModifier::Register (get_reg(&mut fetch)?)
-                    },
-                    0x39 => 
-                    {
-                        push_ins = false;
-                        ins_width = IRInstructionWidth::B8;
-                        IRInstructionModifier::Memory   (fetch_word(&mut fetch)?)
-                    },
                     
-                    _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", ins)),
+                    let width = 
+                        if(ins >= 0x30) { IRInstructionWidth::B8 } 
+                        else if(ins >= 0x20) { IRInstructionWidth::B16 }
+                        else { IRInstructionWidth::B32 };
 
-                };
+                    let modifiers: IRInstructionModifier2 = match (ins & 0xF)
+                    {
 
-                if(push_ins)
-                {
-                    IRInstruction::PSH(ins_width, modifier)
+                        0x0 => 
+                        {
+                            let regs = get2reg(&mut fetch)?;
+                            (
+                                IRInstructionModifier::Register(regs.0),
+                                IRInstructionModifier::Register(regs.1),
+                            )
+                        }, //16mov rr
+                        0x1 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory   (mem),
+                                IRInstructionModifier::Register (reg),
+                            )
+                        }, //16mov mr
+                        0x2 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Register (reg),
+                                IRInstructionModifier::Memory   (mem),
+                            )
+                        }, //16mov rm
+                        0x3 => 
+                        {
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory   (mem0),
+                                IRInstructionModifier::Memory   (mem1),
+                            )
+                        }, //16mov mm
+                        0x4 => 
+                        {
+                            let regs = get2reg(&mut fetch)?;
+                            (
+                                IRInstructionModifier::Register        (regs.0),
+                                IRInstructionModifier::RegisterAddress (regs.1),
+                            )
+                        }, //16mov rra
+                        0x5 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::RegisterAddress (reg),
+                                IRInstructionModifier::Memory          (mem),
+                            )
+                        }, //16mov mra
+                        0x6 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Register      (reg),
+                                IRInstructionModifier::MemoryAddress (mem),
+                            )
+                        }, //16mov rma
+                        0x7 => 
+                        {
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Memory        (mem0),
+                                IRInstructionModifier::MemoryAddress (mem1),
+                            )
+                        }, //16mov mma
+                        0x8 => 
+                        {
+                            let regs = get2reg(&mut fetch)?;
+                            (
+                                IRInstructionModifier::RegisterAddress (regs.0),
+                                IRInstructionModifier::Register        (regs.1),
+                            )
+                        }, //16mov rar
+                        0x9 => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::MemoryAddress (mem),
+                                IRInstructionModifier::Register      (reg),
+                            )
+                        }, //16mov mar
+                        0xA => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::RegisterAddress (reg),
+                                IRInstructionModifier::Memory          (mem),
+                            )
+                        }, //16mov ram
+                        0xB => 
+                        {
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::MemoryAddress (mem0),
+                                IRInstructionModifier::Memory        (mem1),
+                            )
+                        }, //16mov mam
+                        0xC => 
+                        {
+                            let reg = get_reg     (&mut fetch)?;
+                            let mem = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Immediate (mem),
+                                IRInstructionModifier::Register  (reg),
+                            )
+                        }, //16mov ir
+                        0xD => 
+                        {
+                            let mem0 = fetch_dword (&mut fetch)?;
+                            let mem1 = fetch_dword (&mut fetch)?;
+                            ( 
+                                IRInstructionModifier::Immediate (mem0),
+                                IRInstructionModifier::Memory    (mem1),
+                            )
+                        }, //16mov im
+
+                        _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", (ins & 0xF))),
+
+                    };
+
+                    IRInstruction::MOV(width, modifiers)
+
                 }
                 else
                 {
-                    IRInstruction::POP(ins_width, modifier)
+                    let reg = get_reg(&mut fetch)?;
+                    if(ins == 0x03)
+                    {
+                        IRInstruction::LEA(reg)
+                    }
+                    else if(ins == 0x04)
+                    {
+                        IRInstruction::SER_OUT(reg)
+                    }
+                    else if(ins == 0x05)
+                    {
+                        IRInstruction::SER_IN(reg)
+                    }
+                    else
+                    {
+                        return Err(error!("Error no instruction {:#04x}!", ins));
+                    }
                 }
-
-            }
-            else if(ins >= 0x10) // mov instructions
-            {
-                
-                let width = if(ins >= 0x20) { IRInstructionWidth::B8 } else { IRInstructionWidth::B16 };
-
-                let modifiers: IRInstructionModifier2 = match (ins & 0xF)
-                {
-
-                    0x0 => 
-                    {
-                        let regs = get2reg(&mut fetch)?;
-                        (
-                            IRInstructionModifier::Register(regs.0),
-                            IRInstructionModifier::Register(regs.1),
-                        )
-                    }, //16mov rr
-                    0x1 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory   (mem),
-                            IRInstructionModifier::Register (reg),
-                        )
-                    }, //16mov mr
-                    0x2 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Register (reg),
-                            IRInstructionModifier::Memory   (mem),
-                        )
-                    }, //16mov rm
-                    0x3 => 
-                    {
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory   (mem0),
-                            IRInstructionModifier::Memory   (mem1),
-                        )
-                    }, //16mov mm
-                    0x4 => 
-                    {
-                        let regs = get2reg(&mut fetch)?;
-                        (
-                            IRInstructionModifier::Register        (regs.0),
-                            IRInstructionModifier::RegisterAddress (regs.1),
-                        )
-                    }, //16mov rra
-                    0x5 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::RegisterAddress (reg),
-                            IRInstructionModifier::Memory          (mem),
-                        )
-                    }, //16mov mra
-                    0x6 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Register      (reg),
-                            IRInstructionModifier::MemoryAddress (mem),
-                        )
-                    }, //16mov rma
-                    0x7 => 
-                    {
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Memory        (mem0),
-                            IRInstructionModifier::MemoryAddress (mem1),
-                        )
-                    }, //16mov mma
-                    0x8 => 
-                    {
-                        let regs = get2reg(&mut fetch)?;
-                        (
-                            IRInstructionModifier::RegisterAddress (regs.0),
-                            IRInstructionModifier::Register        (regs.1),
-                        )
-                    }, //16mov rar
-                    0x9 => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::MemoryAddress (mem),
-                            IRInstructionModifier::Register      (reg),
-                        )
-                    }, //16mov mar
-                    0xA => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::RegisterAddress (reg),
-                            IRInstructionModifier::Memory          (mem),
-                        )
-                    }, //16mov ram
-                    0xB => 
-                    {
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::MemoryAddress (mem0),
-                            IRInstructionModifier::Memory        (mem1),
-                        )
-                    }, //16mov mam
-                    0xC => 
-                    {
-                        let reg = get_reg    (&mut fetch)?;
-                        let mem = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Immediate (mem),
-                            IRInstructionModifier::Register  (reg),
-                        )
-                    }, //16mov ir
-                    0xD => 
-                    {
-                        let mem0 = fetch_word (&mut fetch)?;
-                        let mem1 = fetch_word (&mut fetch)?;
-                        ( 
-                            IRInstructionModifier::Immediate (mem0),
-                            IRInstructionModifier::Memory    (mem1),
-                        )
-                    }, //16mov im
-
-                    _ => return Err(error!("FATAL: INVALID INSTRUCTION MODIFIER! ({:#x})", (ins & 0xF))),
-
-                };
-
-                IRInstruction::MOV(width, modifiers)
-
-            }
-            else if(ins == 0x04 || ins == 0x05) // in/out ins
-            {
-                let reg = get_reg(&mut fetch)?;
-                if(ins == 0x04)
-                {
-                    IRInstruction::SER_OUT(reg)
-                }
-                else
-                {
-                    IRInstruction::SER_IN(reg)
-                }
-            }
-            else
-            {
-                return Err(error!("Error no instruction {:#04x}!", ins));
-            }
             )
 
         }
