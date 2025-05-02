@@ -1,4 +1,4 @@
-# This project has been renamed to [Erebos](https://github.com/DD737/erebos], this branch will no longer receive updates!
+# This project has been renamed to [Erebos](https://github.com/DD737/erebos), this branch will no longer receive updates!
 
 # Welcome to the squire project I guess
 ## "What the fart is this?"
