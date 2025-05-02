@@ -1,3 +1,5 @@
+# This project has been renamed to [Erebos](https://github.com/DD737/erebos], this branch will no longer receive updates!
+
 # Welcome to the squire project I guess
 ## "What the fart is this?"
 This is me building a computer "from scratch" where I essentially create my own instruction set, virtual machine, assembler, linker, programmin language and maybe more.
