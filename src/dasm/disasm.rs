@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::io::{BufReader, Read};
 use std::fs::File;
 use std::collections::HashMap;
-use squire::instructions::_instruction_conversion::bytes_to_ins;
-use squire::instructions::*;
-use squire::error;
+use erebos::instructions::_instruction_conversion::bytes_to_ins;
+use erebos::instructions::*;
+use erebos::error;
 
 pub struct DASM
 {
@@ -201,6 +201,7 @@ impl DASM
     {
         let ins = match ir
         {
+            IRInstruction::DATA(_) => String::new(),
             IRInstruction::NOP => "nop".to_string(),
             IRInstruction::HLT => "hlt".to_string(),
             IRInstruction::CLF => "clf".to_string(),

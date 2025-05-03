@@ -1,22 +1,22 @@
 [package]
-name = "squire"
+name = "erebos"
 version = "0.9.5"
 edition = "2021"
 
 [[bin]]
-name = "squire_vm"
+name = "erebos_vm"
 path = "src/vm/main.rs"
 
 [[bin]]
-name = "squire_asm"
+name = "erebos_asm"
 path = "src/asm/main.rs"
 
 [[bin]]
-name = "squire_lang"
+name = "erebos_lang"
 path = "src/lang/main.rs"
 
 [[bin]]
-name = "squire_dasm"
+name = "erebos_dasm"
 path = "src/dasm/main.rs"
 
 [dependencies]

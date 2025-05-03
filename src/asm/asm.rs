@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::fs::read_to_string;
 use errors::Error;
 use helpers::parse_escape;
-use squire::instructions::*;
-use squire::{error, error_in};
-use squire::debug::DebugSymbol;
+use erebos::instructions::*;
+use erebos::{error, error_in};
+use erebos::debug::DebugSymbol;
 
 #[derive(Debug, Clone)]
 pub enum Token
@@ -85,7 +85,7 @@ impl AsmTokenizer
             source: match read_to_string(&*file)
             {
                 Ok(s) => s,
-                Err(e) => return Err(Error::IO(e)),
+                Err(e) => return Err(Error::fromio(e)),
             },
             position: 0,
             last_char: None,
@@ -304,8 +304,8 @@ pub mod __dir
 {
     
     use super::*;
-    use squire::executable::__internal::{Label, Section};
-    use squire::instructions::helpers::HeaderConstructor;
+    use erebos::executable::__internal::{Label, Section};
+    use erebos::instructions::helpers::HeaderConstructor;
 
     #[derive(Debug)]
     pub struct DirDefinition
@@ -853,7 +853,7 @@ pub mod __asm
 
     use __dir::AsmDirector;
     use _instruction_conversion::ins_to_bytes;
-    use squire::{executable::__internal::{Format, Label, LabelRequest, Section, SectionData, SectionFormat}, instructions::helpers::*};
+    use erebos::{executable::__internal::{Format, Label, LabelRequest, Section, SectionData, SectionFormat}, instructions::helpers::*};
 
     use super::*;
 

@@ -4,7 +4,7 @@ macro_rules! error
 {
     ($($arg:tt)*) => 
     { 
-        squire::instructions::Error::from(format!($($arg)*))
+        erebos::instructions::Error::from(format!($($arg)*))
         //std::io::Error::new(std::io::ErrorKind::Other, format!($($arg)*)) 
     }
 }
@@ -13,7 +13,7 @@ macro_rules! error_in
 {
     ($loc:tt,$($arg:tt)*) => 
     { 
-        squire::instructions::Error::fromin(format!($($arg)*), $loc)
+        erebos::instructions::Error::fromin(format!($($arg)*), $loc)
         //std::io::Error::new(std::io::ErrorKind::Other, format!($($arg)*)) 
     }
 }

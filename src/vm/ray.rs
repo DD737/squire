@@ -1,8 +1,8 @@
 #![allow(unused_parens)]
 use raylib::prelude::*;
 
-use squire::instructions::Error;
-use squire::error;
+use erebos::instructions::Error;
+use erebos::error;
 
 pub struct RAYHandler
 {

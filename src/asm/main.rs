@@ -3,10 +3,10 @@
 use std::{fmt::Display, fs::write, path::Path};
 use std::sync::Arc;
 use asm::{AsmTokenizer, __asm::ASM, __dir::AsmDirector};
-use squire::instructions::Error;
+use erebos::instructions::Error;
 use colored::*;
-use squire::link::Linker;
-use squire::executable::__internal::Format;
+use erebos::link::Linker;
+use erebos::executable::__internal::Format;
 
 pub mod asm;
 

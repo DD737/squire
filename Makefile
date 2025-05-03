@@ -3,8 +3,8 @@ ifndef args
 endif
 
 vm:
-	@cargo run --bin squire_vm -- $(args)
+	@cargo run --bin erebos_vm -- $(args)
 asm:
-	@cargo run --bin squire_asm -- $(args)
+	@cargo run --bin erebos_asm -- $(args)
 dasm:
-	@cargo run --bin squire_dasm -- $(args)
+	@cargo run --bin erebos_dasm -- $(args)

@@ -4,8 +4,8 @@
 use std::{fs::read, path::Path};
 use colored::{Colorize, ColoredString};
 use vm::VM;
-use squire::instructions::Error;
-use squire::debug::*;
+use erebos::instructions::Error;
+use erebos::debug::*;
 
 pub mod vm;
 pub mod fs;

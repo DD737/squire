@@ -1,6 +1,10 @@
+<<<<<<< HEAD
 # This project has been renamed to [Erebos](https://github.com/DD737/erebos), this branch will no longer receive updates!
 
 # Welcome to the squire project I guess
+=======
+# Welcome to the Erebos project I guess
+>>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 ## "What the fart is this?"
 This is me building a computer "from scratch" where I essentially create my own instruction set, virtual machine, assembler, linker, programmin language and maybe more.
 
@@ -22,7 +26,7 @@ Good question, go do something productive.
 - support for raylib instructions for graphics
 
 # Hopefully Near-Ish Future Roadmap
-### Programming language that compiles to squire_asm
+### Programming language that compiles to erebos_asm
 - likely has c-style or rust-like syntax (?) (subject to change)
 - supports libraries and generally should be less of a pain to work with than the asm
 ### Maybe Maybe Maybe Maybe compilation from `actual` programming languages
@@ -71,3 +75,7 @@ Good question, go do something productive.
     - added minor new instructions to io devices (just check the [instructionset](instructionset) for more info)
     - lots of bugs have been resolved [i couldnt (be bothered to) keep track of them]
     - very close to a state that can be called 1.0 release!
+- ## Version 0.9.2.1
+    - rename to Erebos!!
+    - significant strides to a compiled language! more on this later
+    - compiled language rename to nox

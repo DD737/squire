@@ -1972,3 +1972,119 @@ pub mod _instruction_conversion
     { bytes_to_repr::bytes_to_ins(fetch) }
 
 }
+<<<<<<< HEAD
+=======
+
+
+
+#[allow(non_snake_case)]
+pub mod IIR
+{
+
+    use super::{IRRegister, IRJIFFlags, IRInstructionWidth};
+
+    #[derive(Debug, Clone)]
+    pub enum IIRImmediate
+    {
+        Immediate(u32),
+        Label(String),
+    }
+
+
+    #[derive(Debug, Clone)]
+    pub enum IIRInstructionModifier
+    {
+        Register(IRRegister),
+        Memory(IIRImmediate),
+        RegisterAddress(IRRegister),
+        MemoryAddress(IIRImmediate),
+        Immediate(IIRImmediate),
+    }
+
+    pub type IIRInstructionModifier2 = (IIRInstructionModifier, IIRInstructionModifier);
+    pub type IIRInstructionModifier3 = (IIRInstructionModifier, IIRInstructionModifier, IIRInstructionModifier);
+    /// inexistence implies stack mode
+    pub type IIRALUInstructionModifier3 = Option<IIRInstructionModifier3>; 
+
+    #[derive(Debug, Clone)]
+    pub enum _IIRALUInstruction2
+    {
+
+        NOT(IIRInstructionModifier2),
+        CMP(IIRInstructionModifier2),
+
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum _IIRALUInstruction3
+    {
+
+        ADD(IIRALUInstructionModifier3),
+        SUB(IIRALUInstructionModifier3),
+        MUL(IIRALUInstructionModifier3),
+        DIV(IIRALUInstructionModifier3),
+        MOD(IIRALUInstructionModifier3),
+
+        AND(IIRALUInstructionModifier3),
+         OR(IIRALUInstructionModifier3),
+        XOR(IIRALUInstructionModifier3),
+        SHL(IIRALUInstructionModifier3),
+        SHR(IIRALUInstructionModifier3),
+       NAND(IIRALUInstructionModifier3),
+        NOR(IIRALUInstructionModifier3),
+
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum IIRALUInstruction
+    {
+        Simple (_IIRALUInstruction2),
+        Complex(_IIRALUInstruction3),
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum IIRInstruction
+    {
+        
+        NOP, // no op
+        HLT, // halt
+        CLF, // cleaf flags
+        LEA(IRRegister),
+        SER_OUT(IRRegister),
+        SER_IN (IRRegister),
+        SER_IO(IIRImmediate),
+        PSHFLG,
+        POPFLG,
+        INT(IIRImmediate),
+        DBG, // debug instruction
+
+        // every mov instruction
+        MOV(IRInstructionWidth, IIRInstructionModifier2), 
+
+        // every push instruction
+        PSH(IRInstructionWidth, IIRInstructionModifier),
+        // every pop instruction
+        POP(IRInstructionWidth, IIRInstructionModifier),
+
+        JMP(IIRInstructionModifier), // jump
+        JIF(IIRInstructionModifier, IRJIFFlags), // jump
+        CAL(IIRInstructionModifier), // call
+        RET,
+
+        INC(IRRegister),
+        DEC(IRRegister),
+        // alu instructions
+        ALU(IIRALUInstruction),
+
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum IIRStatement
+    {
+        Instruction(IIRInstruction),
+        Label(String),
+        Data(Vec<u8>),
+    }
+
+}
+>>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)

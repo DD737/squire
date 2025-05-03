@@ -3,7 +3,7 @@
 
 use std::path::Path;
 use colored::*;
-use squire::instructions::Error;
+use erebos::instructions::Error;
 use disasm::*;
 
 pub mod disasm;

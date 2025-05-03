@@ -1,5 +1,5 @@
-use squire::instructions::*;
-use squire::error;
+use erebos::instructions::*;
+use erebos::error;
 use std::collections::HashMap;
 use std::fs::{DirEntry, File};
 use std::io::{BufReader, BufWriter, Write};

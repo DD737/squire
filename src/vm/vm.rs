@@ -8,8 +8,8 @@ use std::time::Duration;
 use std::collections::HashMap;
 
 use _instruction_conversion::bytes_to_ins;
-use squire::error;
-use squire::instructions::{*, helpers::*};
+use erebos::error;
+use erebos::instructions::{*, helpers::*};
 use crate::fs::FS;
 use crate::ray::RAY;
 
@@ -720,7 +720,7 @@ impl VM
                     print!("{c}");
                     if let Err(e) = stdout().flush()
                     {
-                        return Err(Error::IO(e));
+                        return Err(Error::fromio(e));
                     }
 
                 }

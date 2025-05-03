@@ -1,9 +1,15 @@
 use colored::{ColoredString, Colorize};
 
 use std::sync::Arc;
+<<<<<<< HEAD
 use squire::instructions::Error;
 pub type Location = squire::instructions::SourceLocation;
 use squire::error_in;
+=======
+use erebos::instructions::{Error, SourceLocation};
+pub type Location = erebos::instructions::SourceLocation;
+use erebos::error_in;
+>>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 
 use crate::token::{Token, TokenType, Tokenizer, operators_binary, operators_unary};
 #[derive(Debug, Clone)]
@@ -20,7 +26,17 @@ pub enum StatementType
 #[derive(Debug, Clone)]
 pub struct StatementReturn
 {
+<<<<<<< HEAD
     value: StatementExpression
+=======
+    pub loc: SourceLocation,
+    pub value: Option<StatementExpression>
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum StatementDefinitionVarType
+{
+    Var, Con, Let,
+>>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 }
 #[derive(Clone)]
 pub struct StatementDefinitionVar
@@ -320,10 +336,23 @@ impl Parser
 
     fn parse_return(&mut self) -> Result<StatementReturn, Error>
     {
+<<<<<<< HEAD
         self.next(None)?; // skip kw
         Ok(StatementReturn
         {
             value: self.parse_expression()?,
+=======
+        let loc = self.next(None)?.unwrap().loc; // skip kw
+        let value = if(check_eof!(self, self.peek(None))?.t_type == TokenType::LineTermination) { None }
+            else
+            {
+                Some(self.parse_expression()?)
+            };
+        Ok(StatementReturn
+        {
+            loc,
+            value,
+>>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
         })
     }
 

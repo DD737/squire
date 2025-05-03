@@ -2,9 +2,9 @@ use colored::{ColoredString, Colorize};
 use crate::preproc::Preprocessor;
 
 use std::sync::Arc;
-use squire::instructions::Error;
-pub type Location = squire::instructions::SourceLocation;
-use squire::error_in;
+use erebos::instructions::Error;
+pub type Location = erebos::instructions::SourceLocation;
+use erebos::error_in;
 
 pub static operators_binary: &[&[&'static str]] = 
 &[

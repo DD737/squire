@@ -1,0 +1,13 @@
+
+con b: bool @mem = true;
+
+con asdf: u8 @mem = 2 + 1;
+var qwer: u8 @mem = 2 + asdf;
+
+@entry func main()
+{
+    if(b)
+    {
+        return;
+    }
+}

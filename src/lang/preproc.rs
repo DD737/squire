@@ -1,8 +1,13 @@
 use std::fs::read_to_string;
 use std::sync::Arc;
 
+<<<<<<< HEAD
 use squire::instructions::Error;
 pub type Location = squire::instructions::SourceLocation;
+=======
+use erebos::instructions::{Error, SourceLocation};
+pub type Location = erebos::instructions::SourceLocation;
+>>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 
 #[derive(Debug)]
 pub struct Preprocessor
