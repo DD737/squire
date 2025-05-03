@@ -1,4 +1,3 @@
-
 con b: bool @mem = true;
 
 con asdf: u8 @mem = 2 + 1;

@@ -30,3 +30,4 @@ unused_parens = "allow"
 [lints.clippy]
 type-complexity = "allow"
 too-many-arguments = "allow"
+
