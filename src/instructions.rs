@@ -35,9 +35,9 @@ pub mod errors
     #[derive(Debug)]
     pub enum Error
     {
-        Internal(InternalError),
-        Basic(String),
-        IO(std::io::Error),
+        Internal(InternalError, std::backtrace::Backtrace),
+        Basic(String, std::backtrace::Backtrace),
+        IO(std::io::Error, std::backtrace::Backtrace),
     }
     impl Display for Error
     {
@@ -45,9 +45,9 @@ pub mod errors
         {
             match self
             {
-                Error::Internal(e) => write!(f, "{e}"),
-                Error::Basic(e) => write!(f, "{e}"),
-                Error::IO(e) => write!(f, "IO Error: {e}"),
+                Error::Internal (e, b) => write!(f,           "{e} \nBacktrace:\n{b}"),
+                Error::Basic    (e, b) => write!(f,           "{e} \nBacktrace:\n{b}"),
+                Error::IO       (e, b) => write!(f, "IO Error: {e} \nBacktrace:\n{b}"),
             }
         }
     }
@@ -55,15 +55,18 @@ pub mod errors
     {
         pub fn from<T: ToString>(message: T) -> Self
         {
-            Error::Basic(message.to_string())
+            let back = std::backtrace::Backtrace::capture();
+            Error::Basic(message.to_string(), back)
         }
         pub fn fromin<T: ToString, U: Borrow<SourceLocation>>(message: T, loc: U) -> Self
         {
-            Error::Internal(InternalError { message: message.to_string(), loc: loc.borrow().clone() })
+            let back = std::backtrace::Backtrace::capture();
+            Error::Internal(InternalError { message: message.to_string(), loc: loc.borrow().clone() }, back)
         }
         pub fn fromio(err: std::io::Error) -> Self
         {
-            Error::IO(err)
+            let back = std::backtrace::Backtrace::capture();
+            Error::IO(err, back)
         }
     }
 
@@ -136,7 +139,7 @@ impl std::fmt::Debug for SourceLocation
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IRRegister
 {
     RA=0, 
@@ -253,6 +256,8 @@ pub enum IRInstruction
     DEC(IRRegister),
     // alu instructions
     ALU(IRALUInstruction),
+
+    DATA(Vec<u8>),
 
 }
 
@@ -525,7 +530,7 @@ pub mod helpers
     impl HeaderConstructor
     {
 
-        pub fn new() -> Self
+        pub const fn new() -> Self
         {
             Self
             {
@@ -917,6 +922,14 @@ pub mod _instruction_conversion
 
         match ins
         {
+
+            IRInstruction::DATA(bytes) =>
+            {
+                for b in bytes
+                {
+                    push(b)?;
+                }
+            },
     
             IRInstruction::NOP => push(0x00)?,
             IRInstruction::HLT => push(0x01)?,
@@ -1972,8 +1985,6 @@ pub mod _instruction_conversion
     { bytes_to_repr::bytes_to_ins(fetch) }
 
 }
-<<<<<<< HEAD
-=======
 
 
 
@@ -2087,4 +2098,3 @@ pub mod IIR
     }
 
 }
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)

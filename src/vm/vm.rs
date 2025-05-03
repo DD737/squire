@@ -641,7 +641,7 @@ impl VM
 
         match ins
         {
-            IRInstruction::NOP => {},
+            IRInstruction::NOP | IRInstruction::DATA(_) => {},
             IRInstruction::HLT => if(self.validate_kernel_mode(true)?) { self.running = false },
             IRInstruction::CLF => self.flags = 0,
             IRInstruction::PSHFLG => self.stack_push(self.flags)?,

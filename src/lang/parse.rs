@@ -1,15 +1,10 @@
 use colored::{ColoredString, Colorize};
 
+use std::borrow::Borrow;
 use std::sync::Arc;
-<<<<<<< HEAD
-use squire::instructions::Error;
-pub type Location = squire::instructions::SourceLocation;
-use squire::error_in;
-=======
 use erebos::instructions::{Error, SourceLocation};
 pub type Location = erebos::instructions::SourceLocation;
 use erebos::error_in;
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 
 use crate::token::{Token, TokenType, Tokenizer, operators_binary, operators_unary};
 #[derive(Debug, Clone)]
@@ -26,9 +21,6 @@ pub enum StatementType
 #[derive(Debug, Clone)]
 pub struct StatementReturn
 {
-<<<<<<< HEAD
-    value: StatementExpression
-=======
     pub loc: SourceLocation,
     pub value: Option<StatementExpression>
 }
@@ -36,47 +28,52 @@ pub struct StatementReturn
 pub enum StatementDefinitionVarType
 {
     Var, Con, Let,
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 }
 #[derive(Clone)]
 pub struct StatementDefinitionVar
 {
-    name: String,
-    r#type: String,
-    value: Option<StatementExpression>,
+    pub loc: SourceLocation,
+    pub name:    (String, SourceLocation),
+    pub r#type: Option<StatementExpression>,
+    pub storage: (String, SourceLocation),
+    pub vtype: StatementDefinitionVarType,
+    pub value: Option<StatementExpression>,
 }
 
 impl std::fmt::Debug for StatementDefinitionVar
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
     {
-        let name = ColoredString::from("\"".to_owned() + &self.name + "\"").bright_green();
-        let r#type = ColoredString::from("\"".to_owned() + &self.r#type + "\"").bright_green();
-        let value = match &self.value { Some(e) => format!("{:?}", e), None => format!("None")};
-        write!(f, "{} {{ {}: {}, {}: {}, {}: {} }}", "DefinitionVar".green(), "name".cyan(), name, "type".cyan(), r#type, "value".cyan(), value)
+        let name = ColoredString::from("\"".to_owned() + &self.name.0 + "\"").bright_green();
+        let r#type = ColoredString::from("\"".to_owned() + &format!("{:?}", self.r#type) + "\"").bright_green();
+        let value = match &self.value { Some(e) => format!("{:?}", e), None => "None".to_string() };
+        let storage = ColoredString::from("\"".to_owned() + &self.storage.0 + "\"").bright_green();
+        write!(f, "{} {{ {}: {}, {}: {}, {}: {}, {}: {} }}", "DefinitionVar".green(), "name".cyan(), name, "type".cyan(), r#type, "value".cyan(), value, "storage".cyan(), storage)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct StatementDefinitionFunc
 {
-    name: String,
-    rtype: String,
-    params: Vec<StatementDefinitionVar>,
-    content: Vec<Statement>,
+    pub loc: SourceLocation,
+    pub name:  (String, SourceLocation),
+    pub rtype: Option<StatementExpression>,
+    pub params: Vec<StatementDefinitionVar>,
+    pub content: Vec<Statement>,
 }
 #[derive(Clone)]
 pub struct StatementDefinitionStruct
 {
-    name: String,
-    members: Vec<Statement>,
+    pub loc: SourceLocation,
+    pub name: (String, SourceLocation),
+    pub members: Vec<Statement>,
 }
 
 impl std::fmt::Debug for StatementDefinitionStruct
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
     {
-        let name = ColoredString::from("\"".to_owned() + &self.name + "\"").bright_green();
+        let name = ColoredString::from("\"".to_owned() + &self.name.0 + "\"").bright_green();
         let mut _members: Vec<String> = Vec::new();
         self.members.iter().for_each(|m| _members.push(format!("{:?}", m)));
         let members = format!("{} {} {}", "[".bright_green(), _members.join(", "), "]".bright_green());
@@ -87,7 +84,8 @@ impl std::fmt::Debug for StatementDefinitionStruct
 #[derive(Clone)]
 pub struct StatementExpressionLiteral
 {
-    value: String,
+    pub loc: SourceLocation,
+    pub value: String,
 }
 
 impl std::fmt::Debug for StatementExpressionLiteral
@@ -102,27 +100,31 @@ impl std::fmt::Debug for StatementExpressionLiteral
 #[derive(Debug, Clone)]
 pub struct StatementExpressionObjectAccess
 {
-    object: Box<StatementExpression>,
-    member: Box<StatementExpression>,
+    pub loc: SourceLocation,
+    pub object: Box<StatementExpression>,
+    pub member: Box<StatementExpression>,
 }
 #[derive(Debug, Clone)]
 pub struct StatementExpressionFunctionCall
 {
-    name: Box<StatementExpression>,
-    args: Vec<StatementExpression>,
+    pub loc: SourceLocation,
+    pub name: Box<StatementExpression>,
+    pub args: Vec<StatementExpression>,
 }
 #[derive(Debug, Clone)]
 pub struct StatementExpressionUnary
 {
-    operator: String,
-    expr: Box<StatementExpression>,
+    pub loc: SourceLocation,
+    pub operator: String,
+    pub expr: Box<StatementExpression>,
 }
 #[derive(Debug, Clone)]
 pub struct StatementExpressionBinary
 {
-    operator: String,
-    expr1: Box<StatementExpression>,
-    expr2: Box<StatementExpression>,
+    pub loc: SourceLocation,
+    pub operator: String,
+    pub expr1: Box<StatementExpression>,
+    pub expr2: Box<StatementExpression>,
 }
 #[derive(Clone)]
 pub enum StatementExpression
@@ -133,7 +135,20 @@ pub enum StatementExpression
     Unary        (StatementExpressionUnary),
     Binary       (StatementExpressionBinary),
 }
-
+impl StatementExpression
+{
+    pub fn loc(&self) -> SourceLocation
+    {
+        match self
+        {
+            StatementExpression::Literal      (s) => s.loc.clone(),
+            StatementExpression::ObjectAccess (s) => s.loc.clone(),
+            StatementExpression::FunctionCall (s) => s.loc.clone(),
+            StatementExpression::Unary        (s) => s.loc.clone(),
+            StatementExpression::Binary       (s) => s.loc.clone(),
+        }
+    }
+}
 impl std::fmt::Debug for StatementExpression
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
@@ -150,50 +165,91 @@ impl std::fmt::Debug for StatementExpression
 }
 
 #[derive(Debug, Clone)]
-pub struct StatementConditionalIf
+pub struct Modifier
 {
-    condition: StatementExpression,
-    content: Vec<Statement>,
-    r#else: Vec<Statement>,
+    pub loc: Location,
+    pub name: String,
+    pub args: Vec<String>,
 }
 #[derive(Debug, Clone)]
-pub struct StatementConditionalWhile
+pub enum StatementConditionalType
 {
-    condition: StatementExpression,
-    content: Vec<Statement>,
-    r#else: Vec<Statement>,
+    If,
+    While,
+    Else,
 }
 #[derive(Debug, Clone)]
-pub enum StatementConditional
+pub struct StatementConditional
 {
-    If    (StatementConditionalIf),
-    While (StatementConditionalWhile),
+    pub loc: SourceLocation,
+    pub r#type: StatementConditionalType,
+    pub condition: StatementExpression,
+    pub content: Vec<Statement>,
+    pub r#else: Vec<Statement>,
 }
 #[derive(Clone)]
 pub enum Statement
 {
-    Return           (StatementReturn),
-    DefinitionVar    (StatementDefinitionVar),
-    DefinitionFunc   (StatementDefinitionFunc),
-    DefinitionStruct (StatementDefinitionStruct),
-    Expression       (StatementExpression),
-    Conditional      (StatementConditional),
+    Return           (Vec<Modifier>, StatementReturn),
+    DefinitionVar    (Vec<Modifier>, StatementDefinitionVar),
+    DefinitionFunc   (Vec<Modifier>, StatementDefinitionFunc),
+    DefinitionStruct (Vec<Modifier>, StatementDefinitionStruct),
+    Expression       (Vec<Modifier>, StatementExpression),
+    Conditional      (Vec<Modifier>, StatementConditional),
 }
-
+impl Statement
+{
+    pub fn loc(&self) -> SourceLocation
+    {
+        match self
+        {
+            Statement::Return           (_, s) => s.loc.clone(),
+            Statement::DefinitionVar    (_, s) => s.loc.clone(),
+            Statement::DefinitionFunc   (_, s) => s.loc.clone(),
+            Statement::DefinitionStruct (_, s) => s.loc.clone(),
+            Statement::Conditional      (_, s) => s.loc.clone(),
+            Statement::Expression       (_, s) => s.loc(),
+        }
+    }
+    pub fn modifier(&self) -> Vec<Modifier>
+    {
+        match self
+        {
+            Statement::Return           (m, _) => m.clone(),
+            Statement::DefinitionVar    (m, _) => m.clone(),
+            Statement::DefinitionFunc   (m, _) => m.clone(),
+            Statement::DefinitionStruct (m, _) => m.clone(),
+            Statement::Conditional      (m, _) => m.clone(),
+            Statement::Expression       (m, _) => m.clone(),
+        }
+    }
+}
 impl std::fmt::Debug for Statement
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
     {
         match self
         {
-            Statement::Return           (s) => write!(f, "{:?}", s),
-            Statement::DefinitionVar    (s) => write!(f, "{:?}", s),
-            Statement::DefinitionFunc   (s) => write!(f, "{:?}", s),
-            Statement::DefinitionStruct (s) => write!(f, "{:?}", s),
-            Statement::Expression       (s) => write!(f, "{:?}", s),
-            Statement::Conditional      (s) => write!(f, "{:?}", s),
+            Statement::Return           (m, s) => write!(f, "{:?} @ {:?}", m, s),
+            Statement::DefinitionVar    (m, s) => write!(f, "{:?} @ {:?}", m, s),
+            Statement::DefinitionFunc   (m, s) => write!(f, "{:?} @ {:?}", m, s),
+            Statement::DefinitionStruct (m, s) => write!(f, "{:?} @ {:?}", m, s),
+            Statement::Expression       (m, s) => write!(f, "{:?} @ {:?}", m, s),
+            Statement::Conditional      (m, s) => write!(f, "{:?} @ {:?}", m, s),
         }
     }
+}
+
+macro_rules! check_eof
+{
+    ($s:expr, $e:expr) =>
+    {
+        match $e?
+        {
+            Some(e) => Ok(e),
+            None => Err(error_in!(($s.tokenizer.preproc.get_loc()), "Unexpected EOF!"))
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -240,7 +296,7 @@ impl Parser
         Ok(Some(token))
     }
 
-    fn parse_variable_definition(&mut self, skip_kw:bool) -> Result<StatementDefinitionVar, Error>
+    fn parse_variable_definition(&mut self, skip_kw:bool, vtype: StatementDefinitionVarType) -> Result<StatementDefinitionVar, Error>
     {
 
         if(skip_kw)
@@ -248,10 +304,36 @@ impl Parser
             self.next(None)?; // skip kw       
         }
 
-        let name = self.expect(TokenType::Identifier)?.unwrap().raw;
-        self.expect(TokenType::TypeIndicator)?;
-        let r#type = self.expect(TokenType::Identifier)?.unwrap().raw;
+        let name = self.expect(TokenType::Identifier)?.unwrap();
+        let r#type = if(self.peek(None)?.unwrap().t_type == TokenType::TypeIndicator)
+        {
+            self.expect(TokenType::TypeIndicator)?;
+            Some(self.parse_expression()?)
+        }
+        else { None };
         let mut value: Option<StatementExpression> = None;
+        let mut storage: Option<Token> = None;
+
+        if(self.peek(None)?.unwrap().t_type == TokenType::ModifierIndicator)
+        {
+            
+            self.next(None)?;
+            storage = Some(self.expect(TokenType::Identifier)?.unwrap());
+
+            let next = self.peek(Some(true))?;
+
+            if let Some(next) = next
+            {
+                if(next.t_type == TokenType::GroupOpen)
+                {
+                    self.next(None)?;
+                    let val = self.expect(TokenType::Identifier)?.unwrap().raw;
+                    self.expect(TokenType::GroupClose)?;
+                    storage.as_mut().unwrap().raw.push_str(format!("({val})").as_str());
+                }
+            }
+            
+        }
 
         if(self.peek(None)?.unwrap().t_type == TokenType::Operator && self.peek(None)?.unwrap().raw == "=")
         {
@@ -259,11 +341,17 @@ impl Parser
             value = Some(self.parse_expression()?);
         }
 
+        let name    = ( name   .raw, name   .loc );
+        let storage = if let Some(storage) = storage { ( storage.raw, storage.loc ) } else { (String::new(), SourceLocation::new() )};
+
         Ok(StatementDefinitionVar 
         {
+            loc: name.1.clone(),
             name,
             r#type,
-            value,            
+            value,  
+            vtype,  
+            storage,        
         })
 
     }
@@ -271,9 +359,9 @@ impl Parser
     fn parse_function_definition(&mut self) -> Result<StatementDefinitionFunc, Error>
     {
 
-        self.next(None)?; // skip kw
+        let loc = self.next(None)?.unwrap().loc; // skip kw
 
-        let name = self.expect(TokenType::Identifier)?.unwrap().raw;
+        let name = self.expect(TokenType::Identifier)?.unwrap();
         self.expect(TokenType::GroupOpen)?;
 
         let mut params: Vec<StatementDefinitionVar> = Vec::new();
@@ -281,12 +369,16 @@ impl Parser
         while(self.peek(None)?.unwrap().t_type != TokenType::GroupClose)
         {
             if(!params.is_empty()) { self.expect(TokenType::ListSeperator)?; }
-            params.push(self.parse_variable_definition(false)?);
+            params.push(self.parse_variable_definition(false, StatementDefinitionVarType::Let)?);
         }
         self.next(None)?; // skip TokenType::GroupClose
 
-        self.expect(TokenType::TypeIndicator)?;
-        let rtype = self.expect(TokenType::Identifier)?.unwrap().raw;
+        let rtype = if(self.peek(None)?.unwrap().t_type == TokenType::TypeIndicator)
+        {
+            self.expect(TokenType::TypeIndicator)?;
+            Some(self.parse_expression()?)
+        }
+        else { None };
 
         self.expect(TokenType::BlockOpen)?;
 
@@ -299,8 +391,11 @@ impl Parser
         }
         self.next(None)?; // skip TokenType::BlockClose
 
+        let name  = ( name .raw, name .loc );
+
         Ok(StatementDefinitionFunc 
         {
+            loc,
             name,
             rtype,
             params,
@@ -312,9 +407,9 @@ impl Parser
     fn parse_struct(&mut self) -> Result<StatementDefinitionStruct, Error>
     {
 
-        self.next(None)?; // skip kw
+        let loc = self.next(None)?.unwrap().loc; // skip kw
 
-        let name = self.expect(TokenType::Identifier)?.unwrap().raw;
+        let name = self.expect(TokenType::Identifier)?.unwrap();
 
         self.expect(TokenType::BlockOpen)?;
 
@@ -326,22 +421,19 @@ impl Parser
         }
         self.next(None)?; // skip TokenType::BlockClose
 
+        let name    = ( name   .raw, name   .loc );
+
         Ok(StatementDefinitionStruct
         {
+            loc,
             name,
-            members
+            members,
         })
 
     }
 
     fn parse_return(&mut self) -> Result<StatementReturn, Error>
     {
-<<<<<<< HEAD
-        self.next(None)?; // skip kw
-        Ok(StatementReturn
-        {
-            value: self.parse_expression()?,
-=======
         let loc = self.next(None)?.unwrap().loc; // skip kw
         let value = if(check_eof!(self, self.peek(None))?.t_type == TokenType::LineTermination) { None }
             else
@@ -352,7 +444,6 @@ impl Parser
         {
             loc,
             value,
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
         })
     }
 
@@ -367,10 +458,12 @@ impl Parser
         }
         else
         {
+            let tok = self.expect(TokenType::Identifier)?.unwrap();
             Ok(StatementExpression::Literal(
                 StatementExpressionLiteral
                 {
-                    value: self.expect(TokenType::Identifier)?.unwrap().raw,
+                    loc: tok.loc,
+                    value: tok.raw,
                 }
             ))
         }
@@ -383,8 +476,9 @@ impl Parser
 
         while(self.peek(Some(true))?.unwrap().t_type == TokenType::ObjectAccess)
         {
-            self.next(Some(true))?;
+            let loc = self.next(Some(true))?.unwrap().loc;
             object = StatementExpression::ObjectAccess(StatementExpressionObjectAccess {
+                loc,
                 object: Box::new(object),
                 member: Box::new(self.parse_expression_literal()?),
             });
@@ -396,6 +490,8 @@ impl Parser
 
     fn parse_expression_function_call(&mut self) -> Result<StatementExpression, Error>
     {
+
+        let loc = self.peek(None)?.unwrap().loc.clone();
 
         let mut name = self.parse_expression_object_access()?;
 
@@ -413,6 +509,7 @@ impl Parser
             }
             self.next(None)?;
             name = StatementExpression::FunctionCall(StatementExpressionFunctionCall {
+                loc: loc.clone(),
                 name: Box::new(name),
                 args,
             });
@@ -425,9 +522,12 @@ impl Parser
     fn parse_expression_unary(&mut self) -> Result<StatementExpression, Error>
     {
 
+        let loc = self.peek(None)?.unwrap().loc.clone();
+
         Ok(if(self.peek(Some(true))?.unwrap().t_type == TokenType::Operator && operators_unary.contains(&self.peek(Some(true))?.unwrap().raw.as_ref()))
         {
             StatementExpression::Unary(StatementExpressionUnary{
+                loc,
                 operator: self.next(Some(true))?.unwrap().raw,
                 expr: Box::new(self.parse_expression_unary()?),
             })
@@ -442,6 +542,8 @@ impl Parser
     fn parse_expression_binary(&mut self, level: i8) -> Result<StatementExpression, Error>
     {
 
+        let loc = self.peek(None)?.unwrap().loc.clone();
+
         if(level <= -1) { return self.parse_expression_unary(); }
 
         let mut expr1 = self.parse_expression_binary(level - 1)?;
@@ -449,6 +551,7 @@ impl Parser
         while(self.peek(Some(true))?.unwrap().t_type == TokenType::Operator && operators_binary[level as usize].contains(&self.peek(Some(true))?.unwrap().raw.as_ref()))
         {
             expr1 = StatementExpression::Binary(StatementExpressionBinary{
+                loc: loc.clone(),
                 operator: self.next(Some(true))?.unwrap().raw,
                 expr1: Box::new(expr1),
                 expr2: Box::new(self.parse_expression_binary(level - 1)?),
@@ -466,6 +569,8 @@ impl Parser
 
     fn parse_confitional(&mut self) -> Result<StatementConditional, Error>
     {
+
+        let loc = self.peek(None)?.unwrap().loc.clone();
 
         let if_type = (self.peek(None)?.unwrap().t_type == TokenType::KeywordIf);
 
@@ -513,75 +618,147 @@ impl Parser
             }
         }
 
-        Ok(if(if_type)
-        {
-            StatementConditional::If(StatementConditionalIf{
-                condition,
-                content,
-                r#else,
-            })
-        }
-        else
-        {
-            StatementConditional::While(StatementConditionalWhile{
-                condition,
-                content,
-                r#else,
-            })
-        })
+        let r#type = if(if_type) { StatementConditionalType::If } else { StatementConditionalType::While };
 
+        Ok(StatementConditional
+        {
+            loc,
+            r#type,
+            condition,
+            content,
+            r#else,
+        })
+        
+    }
+
+    fn __check_eof<T: Borrow<Token>>(&self, t: Result<Option<T>, Error>) -> Result<T, Error>
+    {
+        match t?
+        {
+            Some(t) => Ok(t),
+            None => Err(error_in!((self.tokenizer.preproc.get_loc()), "Unexpected EOF!")),
+        }
     }
 
     pub fn parse_statement(&mut self) -> Result<Statement, Error>
+    {
+        
+        let mut modifiers: Vec<Modifier> = Vec::new();
+
+        loop
+        {
+            let (stm, mo) = self._parse_statement(modifiers.clone())?;
+            if let Some(m) = mo
+            {
+                modifiers.push(m);
+            }
+            else if let Some(stm) = stm
+            {
+                return Ok(stm);
+            }
+            else
+            {
+                return Err(error_in!((self.tokenizer.preproc.get_loc()), "Unexpected EOF!"));
+            }
+        }
+
+    }
+    fn _parse_statement(&mut self, mod_list: Vec<Modifier>) -> Result<(Option<Statement>, Option<Modifier>), Error>
     {
 
         while(self.peek(Some(true))?.unwrap_or(&Token { t_type: TokenType::Error, loc: Location::new(), raw: String::new() }).t_type  == TokenType::LineTermination) { self.next(None)?; }
 
         let mut line_termination_needed = true;
 
-        let statement: Statement = match self.peek(Some(true))?.unwrap_or(&Token { t_type: TokenType::Error, loc: Location::new(), raw: String::new() }).t_type
+        if(self.peek(Some(true))?.is_none()) { return Ok((None, None)); }
+
+        if(self.peek(None)?.unwrap().t_type == TokenType::ModifierIndicator)
+        {
+            
+            self.next(None)?;
+
+            let ident = self.expect(TokenType::Identifier)?.unwrap();
+            let mut args: Vec<String> = Vec::new();
+
+            if(self.peek(None)?.unwrap().t_type == TokenType::GroupOpen)
+            {
+                self.next(None)?; // skip GroupOpen
+                loop
+                {
+                    let ident = self.expect(TokenType::Identifier)?.unwrap();
+                    args.push(ident.raw);
+                    if(check_eof!(self, self.peek(None))?.t_type == TokenType::GroupClose)
+                    { break; }
+                    self.expect(TokenType::ListSeperator)?;
+                }
+                self.next(None)?; // skip GroupClose
+            }
+
+            let m = Modifier
+            {
+                loc: ident.loc,
+                name: ident.raw,
+                args,
+            };
+
+            return Ok((None, Some(m)));
+
+        }
+
+        let statement: Statement = match self.peek(None)?.unwrap().t_type
         {
             TokenType::KeywordStructDef => 
             {
                 line_termination_needed = false;
-                Statement::DefinitionStruct(self.parse_struct()?)
+                Statement::DefinitionStruct(mod_list, self.parse_struct()?)
             },
             TokenType::KeywordFuncDef => 
             {
                 line_termination_needed = false;
-                Statement::DefinitionFunc(self.parse_function_definition()?)
+                Statement::DefinitionFunc(mod_list, self.parse_function_definition()?)
             },
-            TokenType::KeywordVarDef => 
-            {
-                Statement::DefinitionVar(self.parse_variable_definition(true)?)
-            },
+            TokenType::KeywordVarDef => Statement::DefinitionVar(mod_list, self.parse_variable_definition(true, StatementDefinitionVarType::Var)?),
+            TokenType::KeywordConDef => Statement::DefinitionVar(mod_list, self.parse_variable_definition(true, StatementDefinitionVarType::Con)?),
+            TokenType::KeywordLetDef => Statement::DefinitionVar(mod_list, self.parse_variable_definition(true, StatementDefinitionVarType::Let)?),
             TokenType::KeywordReturn => 
             {
-                Statement::Return(self.parse_return()?)
+                if(!mod_list.is_empty())
+                {
+                    return Err(error_in!((&mod_list.last().unwrap().loc), "Return does not accept modifiers!"));
+                }
+                Statement::Return(mod_list, self.parse_return()?)
             },
 
             TokenType::KeywordIf | TokenType::KeywordWhile =>
             {
+                if(!mod_list.is_empty())
+                {
+                    return Err(error_in!((&mod_list.last().unwrap().loc), "Conditionals do not accept modifiers!"));
+                }
                 line_termination_needed = false;
-                Statement::Conditional(self.parse_confitional()?)
+                Statement::Conditional(mod_list, self.parse_confitional()?)
             }
 
             TokenType::Identifier | TokenType::GroupOpen | TokenType::Operator =>
             {
-                Statement::Expression(self.parse_expression()?)
+                if(!mod_list.is_empty())
+                {
+                    return Err(error_in!((&mod_list.last().unwrap().loc), "Expressions do not accept modifiers!"));
+                }
+                Statement::Expression(mod_list, self.parse_expression()?)
             }
 
             _ => 
             {
-                panic!("your windows will bluescreen in 50 seconds (statement magic token:{:?})", self.peek(None)?);
+                panic!("your windows will bluescreen in 50 seconds (statement magic token:{:?})", self.peek(None).unwrap_or_default());
             },
         };
 
         if(line_termination_needed) { self.expect(TokenType::LineTermination)?; }
 
-        println!("-------------\n{}", ColoredString::from(format!("{:?}", statement)).red());
+        //println!("-------------\n{}", ColoredString::from(format!("{:?}", statement)).red());
 
-        Ok(statement)
+        Ok((Some(statement), None))
 
     }
 

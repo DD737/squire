@@ -4,16 +4,13 @@
 #![allow(non_snake_case)]
 
 use colored::{Colorize, ColoredString};
-<<<<<<< HEAD
-use squire::instructions::Error;
-=======
 use eval::Evaluator;
 use erebos::instructions::Error;
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 
 pub mod preproc;
 pub mod token;
 pub mod parse;
+pub mod eval;
 
 fn print_err(e: impl std::fmt::Display)
 {
@@ -36,9 +33,6 @@ fn handle_err<T>(t: Result<T, Error>) -> Option<T>
 fn main() 
 {
 
-<<<<<<< HEAD
-    let mut parser = match handle_err(parse::Parser::file("code.lure".into()))
-=======
     //println!("{}", "--------------------------------------------------".red());
     //
     //let mut parser = match handle_err(parse::Parser::file("code.nox".into()))
@@ -62,20 +56,13 @@ fn main()
     println!("{}", "--------------------------------------------------".red());
 
     let mut eval = match handle_err(eval::Evaluator::file("code.nox".into()))
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
     {
         Some(p) => p,
         None => return,
     };
 
-    println!("{}", "--------------------------------------------------".red());
-    
-    while(!parser.tokenizer.end_of_tokens())
+    let tree = match handle_err(eval.generate_ir())
     {
-<<<<<<< HEAD
-        //println!("{:?}", parser.tokenizer.get_next_token(Some(true)));
-        let s = match handle_err(parser.parse_statement())
-=======
         Some(t) => t,
         None => return,
     };
@@ -93,15 +80,45 @@ fn main()
     {
 
         let steps = match handle_err(eval.ir_steps_sequ_scope(c.borrow().scope.clone()))
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
         {
             Some(s) => s,
             None => return,
         };
-        println!("{s:?}");
-        //println!("{:?}", parser.parse_statement());
+
+        for s in steps
+        {
+            println!("{:?} = {:?}", s.0, s.1);
+        }
+
     }
 
     println!("{}", "--------------------------------------------------".red());
+
+    // let l = squire::instructions::SourceLocation::default();
+    // let v = Evaluator::eval_type_check(&EvalValue::Complex(eval::eval_value::EvalValueComplex::OpBinary(
+    //     eval::eval_value::EvalValueComplexOpBinary::ADD, 
+    //     Box::new(EvalValue::Number(12, l.clone())), 
+    //     Box::new(EvalValue::Symbol(
+    //             eval::eval_value::EvalSymbol::Variable(
+    //                 std::rc::Rc::new(RefCell::new(EvalVariable
+    //                 {
+    //                     constant: false,
+    //                     id: 14,
+    //                     initializer: Some(EvalValue::Number(2, l.clone())),
+    //                     name: "asdf".to_string(),
+    //                     unique_name: "asdf".to_string(),
+    //                     parent: std::rc::Rc::downgrade(&tree),
+    //                     storage: eval::EvalStorage::Register(squire::instructions::IRRegister::RA),
+    //                     r#type: Rc::new(RefCell::new(eval::types::EvalType::Internal(eval::types::EvalTypeInternal::Void))),
+    //                     value: None,
+    //                 }))
+    //             )
+    //         , l.clone()))
+    // ), l.clone()));
+    //
+    // if let Some(a) = handle_err(v)
+    // { println!("{a:?}"); }
+    //
+    // println!("{}", "--------------------------------------------------".red());
 
 }

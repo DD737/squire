@@ -1,43 +1,80 @@
 use std::fs::read_to_string;
+use std::iter::Peekable;
 use std::sync::Arc;
 
-<<<<<<< HEAD
-use squire::instructions::Error;
-pub type Location = squire::instructions::SourceLocation;
-=======
 use erebos::instructions::{Error, SourceLocation};
 pub type Location = erebos::instructions::SourceLocation;
->>>>>>> 3814d3a (version 0.9.2.1, rename to erebos)
 
 #[derive(Debug)]
 pub struct Preprocessor
 {
-    pub source: String,
-    pub position: usize,
-    pub last_char: Option<char>,
-
+    pub source: Peekable<std::vec::IntoIter<(char, SourceLocation)>>,
     pub file: Arc<str>,
-    pub line: i32,
-    pub column: i32,
+    pub last_loc: Location,
 }
 impl Preprocessor
 {
 
-    fn preproc_magic(src: String) -> String
+    fn preproc_magic(src: String, file: Arc<str>) -> Peekable<std::vec::IntoIter<(char, SourceLocation)>>
     {
 
-        let mut out = String::new();
+        let mut linev: Vec<(char, SourceLocation)> = Vec::new();
+        let mut lines: Vec<Vec<(char, SourceLocation)>> = Vec::new();
 
-        for l in src.split('\n')
+        let mut line  : i64 = 1;
+        let mut column: i64 = 1;
+
+        for c in src.chars()
         {
-            let l = l.trim();
-            if(l.len() < 2 || &l[0..2] != "//") 
-            { 
-                out.push_str(l); 
+            if(c == '\n')
+            {
+                lines.push(linev);
+                linev = Vec::new();
+                line += 1;
+                column = 1;
+            }
+            else
+            {
+                column += 1;
+                linev.push((c, SourceLocation::from(line, column, file.clone())));
             }
         }
+        
+        let mut out: Vec<(char, SourceLocation)> = Vec::new();
 
-        out
+        for l in lines
+        {
+            
+            if(l.is_empty()) { continue; }
+
+            let mut start = 0;
+            let mut end = l.len() - 1;
+
+            for (i, c) in l.iter().enumerate()
+            {
+                start = i;
+                if(!c.0.is_whitespace())
+                {
+                    break;
+                }
+            }
+
+            if(start == end && l[end].0.is_whitespace()) { continue; }
+
+            for (i, c) in l.iter().enumerate().rev()
+            {
+                if(!c.0.is_whitespace())
+                {
+                    end = i;
+                    break;
+                }
+            }
+
+            out.extend_from_slice(&l[start..=end]);
+
+        }
+
+        out.into_iter().peekable()
 
     }
 
@@ -47,60 +84,35 @@ impl Preprocessor
         {
             source: match read_to_string(file.to_string())
             {
-                Ok(s) => Preprocessor::preproc_magic(s),
+                Ok(s) => Preprocessor::preproc_magic(s, file.clone()),
                 Err(e) => return Err(Error::fromio(e)),
             },
-            position: 0,
-            last_char: None,
-
             file,
-            line: 1,
-            column: 1,
+            last_loc: Location::default(),
         })
     }
 
     pub fn get_loc(&self) -> Location
-    { Location::from(self.line, self.column, self.file.clone()) }
+    { self.last_loc.clone() }
 
-    fn _peek(&mut self) -> Option<&char>
-    {
-        if(self.last_char.is_none())
-        {
-            let c = self.source[self.position..].chars().next()?;
-            self.position += c.len_utf8();
-            self.last_char = Some(c);
-        }
-        self.last_char.as_ref()
-    }
-    fn _next(&mut self) -> Option<char>
-    {
-        self._peek()?;
-        self.last_char.take()
-    }
-
-    pub fn peek(&mut self) -> Option<(&char, Location)>
+    pub fn peek(&mut self) -> Option<&(char, Location)>
     { 
-        if(self._peek()? == &'\r')
+        if(self.source.peek()?.0 == '\r')
         {
             self.next();
-            return self.peek();
+            self.peek()
         }
         else
         {
-            let loc = self.get_loc();
-            Some(( self._peek()?, loc )) 
+            self.source.peek()
         }
     }
+#[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(char, Location)>
     {
-        let c = self._next()?;
-        if(c == '\n')
-        {
-            self.line += 1;
-            self.column = 1;
-        }
-        else { self.column += 1; }
-        Some(( c, self.get_loc() )) 
+        let n = self.source.next()?;
+        self.last_loc = n.1.clone();
+        Some(n)
     }
 
 }

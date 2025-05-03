@@ -6,7 +6,7 @@ use erebos::instructions::Error;
 pub type Location = erebos::instructions::SourceLocation;
 use erebos::error_in;
 
-pub static operators_binary: &[&[&'static str]] = 
+pub static operators_binary: &[&[&str]] = 
 &[
     &["/", "*", "%",],
     &["-", "+",     ],
@@ -17,9 +17,9 @@ pub static operators_binary: &[&[&'static str]] =
     &["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="],
 ];
 
-pub static operators_unary: &[&'static str] = 
+pub static operators_unary: &[&str] = 
 &[
-    "~", "-", "+", "!",
+    "~", "-", "+", "!", "*", "&",
 ];
 
 
@@ -29,6 +29,8 @@ pub enum TokenType
     Error,
 
     KeywordVarDef,
+    KeywordConDef,
+    KeywordLetDef,
     KeywordFuncDef,
     KeywordStructDef,
     KeywordReturn,
@@ -41,6 +43,7 @@ pub enum TokenType
     LineTermination,
     ListSeperator,
     ObjectAccess,
+    ModifierIndicator,
 
     Identifier,
     Operator,
@@ -57,25 +60,28 @@ impl std::fmt::Debug for TokenType
     {
         match *self
         {
-            TokenType::Error            => write!(f, "{}", " Error            ".magenta()),
-            TokenType::KeywordVarDef    => write!(f, "{}", " KeywordVarDef    ".magenta()),
-            TokenType::KeywordFuncDef   => write!(f, "{}", " KeywordFuncDef   ".magenta()),
-            TokenType::KeywordStructDef => write!(f, "{}", " KeywordStructDef ".magenta()),
-            TokenType::KeywordReturn    => write!(f, "{}", " KeywordReturn    ".magenta()),
-            TokenType::KeywordIf        => write!(f, "{}", " KeywordIf        ".magenta()),
-            TokenType::KeywordElse      => write!(f, "{}", " KeywordElse      ".magenta()),
-            TokenType::KeywordWhile     => write!(f, "{}", " KeywordWhile     ".magenta()),
-            TokenType::KeywordFor       => write!(f, "{}", " KeywordFor       ".magenta()),
-            TokenType::TypeIndicator    => write!(f, "{}", " TypeIndicator    ".magenta()),
-            TokenType::LineTermination  => write!(f, "{}", " LineTermination  ".magenta()),
-            TokenType::ListSeperator    => write!(f, "{}", " ListSeperator    ".magenta()),
-            TokenType::ObjectAccess     => write!(f, "{}", " ObjectAccess     ".magenta()),
-            TokenType::Identifier       => write!(f, "{}", " Identifier       ".magenta()),
-            TokenType::Operator         => write!(f, "{}", " Operator         ".magenta()),
-            TokenType::BlockOpen        => write!(f, "{}", " BlockOpen        ".magenta()),
-            TokenType::BlockClose       => write!(f, "{}", " BlockClose       ".magenta()),
-            TokenType::GroupOpen        => write!(f, "{}", " GroupOpen        ".magenta()),
-            TokenType::GroupClose       => write!(f, "{}", " GroupClose       ".magenta()),
+            TokenType::Error             => write!(f, "{}", " Error             ".magenta()),
+            TokenType::KeywordVarDef     => write!(f, "{}", " KeywordVarDef     ".magenta()),
+            TokenType::KeywordConDef     => write!(f, "{}", " KeywordConDef     ".magenta()),
+            TokenType::KeywordLetDef     => write!(f, "{}", " KeywordLetDef     ".magenta()),
+            TokenType::KeywordFuncDef    => write!(f, "{}", " KeywordFuncDef    ".magenta()),
+            TokenType::KeywordStructDef  => write!(f, "{}", " KeywordStructDef  ".magenta()),
+            TokenType::KeywordReturn     => write!(f, "{}", " KeywordReturn     ".magenta()),
+            TokenType::KeywordIf         => write!(f, "{}", " KeywordIf         ".magenta()),
+            TokenType::KeywordElse       => write!(f, "{}", " KeywordElse       ".magenta()),
+            TokenType::KeywordWhile      => write!(f, "{}", " KeywordWhile      ".magenta()),
+            TokenType::KeywordFor        => write!(f, "{}", " KeywordFor        ".magenta()),
+            TokenType::TypeIndicator     => write!(f, "{}", " TypeIndicator     ".magenta()),
+            TokenType::LineTermination   => write!(f, "{}", " LineTermination   ".magenta()),
+            TokenType::ListSeperator     => write!(f, "{}", " ListSeperator     ".magenta()),
+            TokenType::ObjectAccess      => write!(f, "{}", " ObjectAccess      ".magenta()),
+            TokenType::Identifier        => write!(f, "{}", " Identifier        ".magenta()),
+            TokenType::Operator          => write!(f, "{}", " Operator          ".magenta()),
+            TokenType::BlockOpen         => write!(f, "{}", " BlockOpen         ".magenta()),
+            TokenType::BlockClose        => write!(f, "{}", " BlockClose        ".magenta()),
+            TokenType::GroupOpen         => write!(f, "{}", " GroupOpen         ".magenta()),
+            TokenType::GroupClose        => write!(f, "{}", " GroupClose        ".magenta()),
+            TokenType::ModifierIndicator => write!(f, "{}", " ModifierIndicator ".magenta()),
         }
     }
 }
@@ -103,6 +109,8 @@ fn keyword(kw: &str) -> Option<TokenType>
     {
         "struct" => Some(TokenType::KeywordStructDef),
         "var"    => Some(TokenType::KeywordVarDef),
+        "con"    => Some(TokenType::KeywordConDef),
+        "let"    => Some(TokenType::KeywordLetDef),
         "func"   => Some(TokenType::KeywordFuncDef),
         "return" => Some(TokenType::KeywordReturn),
         "if"     => Some(TokenType::KeywordIf),
@@ -131,9 +139,9 @@ impl Tokenizer
 
     pub fn peek(&mut self) -> Option<(char, Location)>
     { 
-        let t = self.preproc.peek()?;
-        Some(( *t.0, t.1 ))
+        self.preproc.peek().cloned()
     }
+#[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(char, Location)> { self.preproc.next() }
     pub fn end_of_tokens(&mut self) -> bool { self.preproc.peek().is_none() }
 
@@ -144,7 +152,7 @@ impl Tokenizer
         {
             if(!inexistence_fine.unwrap_or(false))
             {
-                return Err(error_in!((self.preproc.get_loc()), "Requesteing too many tokens!"))
+                return Err(error_in!((self.preproc.get_loc()), "Requesting too many tokens!"))
             }
             return Ok(None);
         }
@@ -161,14 +169,15 @@ impl Tokenizer
 
         let token = match val.0
         {
-            ';' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::LineTermination }),
-            '{' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::BlockOpen }),
-            '}' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::BlockClose }),
-            '(' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::GroupOpen }),
-            ')' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::GroupClose }),
-            ',' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::ListSeperator }),
-            ':' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::TypeIndicator }),
-            '.' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::ObjectAccess }),
+            ';' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::LineTermination  }),
+            '{' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::BlockOpen        }),
+            '}' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::BlockClose       }),
+            '(' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::GroupOpen        }),
+            ')' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::GroupClose       }),
+            ',' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::ListSeperator    }),
+            ':' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::TypeIndicator    }),
+            '.' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::ObjectAccess     }),
+            '@' => Some(Token { raw: val.0.to_string(), loc: val.1.clone(), t_type: TokenType::ModifierIndicator }),
              _  => 
              'a: {
                 
@@ -192,7 +201,7 @@ impl Tokenizer
                     }
                 }
 
-                if(elligable_ops.len() < 1) { break 'a None; }
+                if(elligable_ops.is_empty()) { break 'a None; }
 
                 self.next();
 
@@ -225,11 +234,11 @@ impl Tokenizer
                     panic!("No elligable operator found! {}", val.0);
                 }
 
-                Some(Token {
+                return Ok(Some(Token {
                     t_type: TokenType::Operator,
                     raw: OP.to_string(),
                     loc: val.1.clone(),
-                })
+                }));
 
              }
         };
@@ -237,6 +246,37 @@ impl Tokenizer
         {
             self.next();
             return Ok(Some(token));
+        }
+
+        if(self.peek().unwrap().0 == '"')
+        {
+            
+            let _loc = self.next().unwrap().1;
+            let mut loc = _loc.clone();
+            let mut str = "\"".to_string();
+
+            loop
+            {
+                let c = self.next();
+                if let Some(c) = c 
+                {
+                    if(c.0 == '"') { break; }
+                    loc = c.1;
+                    str.push(c.0);
+                }
+                else
+                {
+                    return Err(error_in!(loc, "Expected closing '\"' at the end of string literal!"));
+                }
+            }
+
+            return Ok(Some(Token
+            {
+                loc: _loc,
+                raw: str,
+                t_type: TokenType::Identifier
+            }));
+
         }
 
         let mut ident = String::new();
